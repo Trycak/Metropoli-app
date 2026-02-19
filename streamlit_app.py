@@ -2,6 +2,7 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from datetime import datetime
+import re
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Metropoli Basket Academy", page_icon="🏀", layout="wide")
@@ -79,7 +80,7 @@ if choice == "🛒 Ventas":
                     st.error("Debe poner el nombre del cliente para ventas a crédito")
                 else:
                     fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
-                    # Formato especial para poder contar items luego: Item(Cant)
+                    # Formato: Nombre(Cantidad)
                     detalle = ", ".join([f"{i['nombre']}({i['cantidad']})" for i in st.session_state.carrito.values()])
                     c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente) VALUES (?,?,?,?,?)", 
                               (fecha, total, metodo, detalle, cliente))
@@ -125,61 +126,77 @@ elif choice == "📦 Inventario":
         st.success("Producto eliminado")
         st.rerun()
 
-# --- SECCIÓN REPORTES (ACTUALIZADA) ---
+# --- SECCIÓN REPORTE ---
 elif choice == "📊 Reporte":
     st.header("Reporte de Ventas")
-    
     df_v = pd.read_sql_query("SELECT * FROM ventas ORDER BY id DESC", conn)
     
     if not df_v.empty:
-        # 1. Resumen de dinero
         total_dia = df_v['total'].sum()
         c1, c2 = st.columns(2)
         c1.metric("Ingresos Totales", f"₡{int(total_dia)}")
         c2.metric("Ventas Realizadas", len(df_v))
 
-        # 2. CONTABILIZAR ÍTEMS POR APARTE
+        # CONTABILIZAR ÍTEMS
         st.subheader("📈 Artículos más vendidos")
         conteo_items = {}
         for d in df_v['detalle']:
-            # Extraer nombre y cantidad del formato "Producto(Cantidad)"
             partes = d.split(", ")
             for p in partes:
-                try:
+                if "(" in p and ")" in p:
                     nombre_item = p.split("(")[0]
                     cant_item = int(p.split("(")[1].replace(")", ""))
                     conteo_items[nombre_item] = conteo_items.get(nombre_item, 0) + cant_item
-                except:
-                    continue
         
         if conteo_items:
             df_items = pd.DataFrame(list(conteo_items.items()), columns=['Producto', 'Cantidad Vendida'])
             st.table(df_items.sort_values(by='Cantidad Vendida', ascending=False))
 
-        # 3. ELIMINAR VENTA CON CONFIRMACIÓN
+        # ELIMINAR VENTA CON DEVOLUCIÓN DE STOCK
         st.write("---")
-        st.subheader("🗑️ Eliminar Venta por Error")
+        st.subheader("🗑️ Eliminar Venta y Devolver Stock")
         st.dataframe(df_v[['id', 'fecha', 'total', 'detalle', 'cliente']], use_container_width=True)
         
-        venta_a_borrar = st.number_input("Ingrese el ID de la venta que desea borrar:", min_value=1, step=1)
+        venta_a_borrar = st.number_input("ID de la venta a eliminar:", min_value=1, step=1)
         
-        # Sistema de confirmación
         if "confirmar_borrado" not in st.session_state:
             st.session_state.confirmar_borrado = False
 
-        if st.button("⚠️ Borrar Venta"):
+        if st.button("⚠️ Solicitar Borrado"):
             st.session_state.confirmar_borrado = True
 
         if st.session_state.confirmar_borrado:
-            st.warning(f"¿Está seguro de que desea eliminar la venta ID #{int(venta_a_borrar)}? Esto no devolverá el stock automáticamente.")
+            st.warning(f"¿Confirmar eliminación de Venta #{int(venta_a_borrar)}? El stock será devuelto al inventario.")
             col_si, col_no = st.columns(2)
-            if col_si.button("SÍ, ELIMINAR"):
-                c.execute("DELETE FROM ventas WHERE id=?", (venta_a_borrar,))
-                conn.commit()
-                st.session_state.confirmar_borrado = False
-                st.success(f"Venta #{int(venta_a_borrar)} eliminada.")
-                st.rerun()
-            if col_no.button("NO, CANCELAR"):
+            
+            if col_si.button("SÍ, ELIMINAR Y DEVOLVER STOCK"):
+                # 1. Obtener el detalle de la venta antes de borrarla
+                res = c.execute("SELECT detalle FROM ventas WHERE id=?", (venta_a_borrar,)).fetchone()
+                if res:
+                    detalle_texto = res[0]
+                    # 2. Procesar el texto para devolver stock
+                    # Ejemplo: "Agua(2), Galleta(1)"
+                    items_venta = detalle_texto.split(", ")
+                    for item in items_venta:
+                        try:
+                            nombre_p = item.split("(")[0]
+                            cantidad_p = int(item.split("(")[1].replace(")", ""))
+                            # 3. Actualizar la tabla de productos sumando la cantidad
+                            c.execute("UPDATE productos SET stock = stock + ? WHERE nombre = ?", (cantidad_p, nombre_p))
+                        except:
+                            continue
+                    
+                    # 4. Borrar la venta
+                    c.execute("DELETE FROM ventas WHERE id=?", (venta_a_borrar,))
+                    conn.commit()
+                    st.session_state.confirmar_borrado = False
+                    st.success(f"Venta #{int(venta_a_borrar)} eliminada. El stock ha sido actualizado.")
+                    st.rerun()
+                else:
+                    st.error("ID de venta no encontrado.")
+                    st.session_state.confirmar_borrado = False
+
+            if col_no.button("CANCELAR"):
                 st.session_state.confirmar_borrado = False
                 st.rerun()
     else:
