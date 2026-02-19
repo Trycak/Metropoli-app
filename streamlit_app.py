@@ -14,7 +14,6 @@ def conectar_db():
 conn = conectar_db()
 c = conn.cursor()
 c.execute('CREATE TABLE IF NOT EXISTS productos (id INTEGER PRIMARY KEY, nombre TEXT, precio REAL, stock INTEGER)')
-# Aseguramos que la tabla ventas tenga la columna fecha correctamente
 c.execute('CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, fecha TEXT, total REAL, metodo TEXT, detalle TEXT, cliente TEXT)')
 conn.commit()
 
@@ -28,9 +27,10 @@ st.markdown("""
 
 # 3. Encabezado
 st.title("🏀 Metropoli Basket Academy")
+st.subheader("Sistema de Gestión de Inventario y Ventas")
 
 # 4. Menú Lateral
-menu = ["🛒 Ventas", "📦 Inventario", "📝 Cuentas por Cobrar", "📊 Reporte Histórico"]
+menu = ["🛒 Ventas", "📦 Inventario", "📝 Cuentas por Cobrar", "📊 Reporte"]
 choice = st.sidebar.radio("Menú Principal", menu)
 
 # --- SECCIÓN VENTAS ---
@@ -44,7 +44,7 @@ if choice == "🛒 Ventas":
         prods = pd.read_sql_query("SELECT * FROM productos WHERE stock > 0 ORDER BY nombre ASC", conn)
         
         if prods.empty:
-            st.warning("No hay productos en el inventario.")
+            st.warning("No hay productos en el inventario. Ve a la pestaña de Inventario para agregar.")
         else:
             columnas = st.columns(3)
             for i, row in prods.iterrows():
@@ -58,7 +58,7 @@ if choice == "🛒 Ventas":
                         st.rerun()
 
     with col2:
-        st.write("### Ticket Actual")
+        st.write("### Detalle de Venta")
         if st.session_state.carrito:
             total = 0
             for pid, item in list(st.session_state.carrito.items()):
@@ -76,22 +76,18 @@ if choice == "🛒 Ventas":
 
             if st.button("✅ Finalizar Venta", type="primary"):
                 if metodo == "Crédito" and not cliente:
-                    st.error("Debe poner el nombre del cliente")
+                    st.error("Debe poner el nombre del cliente para ventas a crédito")
                 else:
-                    # Guardamos la fecha con año-mes-día para facilitar el filtro
-                    fecha_hoy = datetime.now().strftime("%Y-%m-%d")
-                    hora_hoy = datetime.now().strftime("%H:%M")
+                    fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
+                    # Formato especial para poder contar items luego: Item(Cant)
                     detalle = ", ".join([f"{i['nombre']}({i['cantidad']})" for i in st.session_state.carrito.values()])
-                    
                     c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente) VALUES (?,?,?,?,?)", 
-                              (fecha_hoy, total, metodo, detalle, cliente))
-                    
+                              (fecha, total, metodo, detalle, cliente))
                     for pid, item in st.session_state.carrito.items():
                         c.execute("UPDATE productos SET stock = stock - ? WHERE id = ?", (item['cantidad'], int(pid)))
-                    
                     conn.commit()
                     st.session_state.carrito = {}
-                    st.success("¡Venta registrada!")
+                    st.success("¡Venta registrada con éxito!")
                     st.rerun()
             
             if st.button("🗑️ Vaciar Carrito"):
@@ -103,58 +99,96 @@ if choice == "🛒 Ventas":
 # --- SECCIÓN INVENTARIO ---
 elif choice == "📦 Inventario":
     st.header("Gestión de Inventario")
+    
     with st.expander("➕ Agregar Nuevo Producto"):
         with st.form("nuevo_producto"):
             nombre = st.text_input("Nombre")
-            precio = st.number_input("Precio (₡)", min_value=0)
-            stock = st.number_input("Cantidad inicial", min_value=0)
-            if st.form_submit_button("Guardar"):
+            precio = st.number_input("Precio (₡)", min_value=0, step=100)
+            stock = st.number_input("Cantidad inicial", min_value=0, step=1)
+            if st.form_submit_button("Guardar Producto"):
                 if nombre:
                     c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (nombre, precio, stock))
                     conn.commit()
+                    st.success(f"Producto {nombre} agregado")
                     st.rerun()
 
+    st.subheader("Productos Actuales")
     df = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos", conn)
     st.dataframe(df, use_container_width=True)
+    
+    st.write("---")
+    st.write("### Eliminar o Editar Stock")
+    del_id = st.number_input("ID del producto", min_value=1, step=1)
+    if st.button("❌ Eliminar Producto"):
+        c.execute("DELETE FROM productos WHERE id=?", (del_id,))
+        conn.commit()
+        st.success("Producto eliminado")
+        st.rerun()
 
-# --- SECCIÓN REPORTE INTELIGENTE ---
-elif choice == "📊 Reporte Histórico":
-    st.header("Historial de Ventas")
+# --- SECCIÓN REPORTES (ACTUALIZADA) ---
+elif choice == "📊 Reporte":
+    st.header("Reporte de Ventas")
     
-    # Selector de fecha para consultar
-    fecha_consulta = st.date_input("Selecciona el día que quieres consultar", datetime.now())
-    fecha_str = fecha_consulta.strftime("%Y-%m-%d")
-    
-    st.write(f"### Ventas del día: {fecha_str}")
-    
-    # Filtramos la base de datos por la fecha seleccionada
-    query = "SELECT * FROM ventas WHERE fecha = ?"
-    df_v = pd.read_sql_query(query, conn, params=(fecha_str,))
+    df_v = pd.read_sql_query("SELECT * FROM ventas ORDER BY id DESC", conn)
     
     if not df_v.empty:
-        # Mostrar resumen rápido
-        col_r1, col_r2 = st.columns(2)
+        # 1. Resumen de dinero
         total_dia = df_v['total'].sum()
-        col_r1.metric("Ventas Totales", f"₡{int(total_dia)}")
-        col_r2.metric("Cant. Transacciones", len(df_v))
+        c1, c2 = st.columns(2)
+        c1.metric("Ingresos Totales", f"₡{int(total_dia)}")
+        c2.metric("Ventas Realizadas", len(df_v))
+
+        # 2. CONTABILIZAR ÍTEMS POR APARTE
+        st.subheader("📈 Artículos más vendidos")
+        conteo_items = {}
+        for d in df_v['detalle']:
+            # Extraer nombre y cantidad del formato "Producto(Cantidad)"
+            partes = d.split(", ")
+            for p in partes:
+                try:
+                    nombre_item = p.split("(")[0]
+                    cant_item = int(p.split("(")[1].replace(")", ""))
+                    conteo_items[nombre_item] = conteo_items.get(nombre_item, 0) + cant_item
+                except:
+                    continue
         
-        st.dataframe(df_v, use_container_width=True)
+        if conteo_items:
+            df_items = pd.DataFrame(list(conteo_items.items()), columns=['Producto', 'Cantidad Vendida'])
+            st.table(df_items.sort_values(by='Cantidad Vendida', ascending=False))
+
+        # 3. ELIMINAR VENTA CON CONFIRMACIÓN
+        st.write("---")
+        st.subheader("🗑️ Eliminar Venta por Error")
+        st.dataframe(df_v[['id', 'fecha', 'total', 'detalle', 'cliente']], use_container_width=True)
         
-        # Botón para exportar solo lo que se está viendo
-        csv = df_v.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Descargar Reporte (CSV)",
-            data=csv,
-            file_name=f'reporte_{fecha_str}.csv',
-            mime='text/csv',
-        )
+        venta_a_borrar = st.number_input("Ingrese el ID de la venta que desea borrar:", min_value=1, step=1)
+        
+        # Sistema de confirmación
+        if "confirmar_borrado" not in st.session_state:
+            st.session_state.confirmar_borrado = False
+
+        if st.button("⚠️ Borrar Venta"):
+            st.session_state.confirmar_borrado = True
+
+        if st.session_state.confirmar_borrado:
+            st.warning(f"¿Está seguro de que desea eliminar la venta ID #{int(venta_a_borrar)}? Esto no devolverá el stock automáticamente.")
+            col_si, col_no = st.columns(2)
+            if col_si.button("SÍ, ELIMINAR"):
+                c.execute("DELETE FROM ventas WHERE id=?", (venta_a_borrar,))
+                conn.commit()
+                st.session_state.confirmar_borrado = False
+                st.success(f"Venta #{int(venta_a_borrar)} eliminada.")
+                st.rerun()
+            if col_no.button("NO, CANCELAR"):
+                st.session_state.confirmar_borrado = False
+                st.rerun()
     else:
-        st.info(f"No hay ventas registradas para el día {fecha_str}.")
+        st.info("No hay ventas registradas")
 
 elif choice == "📝 Cuentas por Cobrar":
     st.header("Cuentas Pendientes (Crédito)")
     cuentas = pd.read_sql_query("SELECT * FROM ventas WHERE metodo = 'Crédito'", conn)
     if not cuentas.empty:
-        st.dataframe(cuentas, use_container_width=True)
+        st.dataframe(cuentas)
     else:
-        st.info("No hay cuentas pendientes.")
+        st.info("No hay cuentas pendientes")
