@@ -95,37 +95,64 @@ if choice == "🛒 Ventas":
         else:
             st.info("El carrito está vacío")
 
-# --- SECCIÓN INVENTARIO ---
+# --- SECCIÓN INVENTARIO (ACTUALIZADA CON EDICIÓN) ---
 elif choice == "📦 Inventario":
     st.header("Gestión de Inventario")
     
-    with st.expander("➕ Agregar Nuevo Producto"):
-        with st.form("nuevo_producto"):
-            nombre = st.text_input("Nombre")
-            precio = st.number_input("Precio (₡)", min_value=0, step=100)
-            stock = st.number_input("Cantidad inicial", min_value=0, step=1)
-            if st.form_submit_button("Guardar Producto"):
-                if nombre:
-                    c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (nombre, precio, stock))
+    # Pestañas dentro de inventario para organizar mejor
+    tab1, tab2, tab3 = st.tabs(["📋 Lista Actual", "➕ Nuevo Producto", "✏️ Editar / 🗑️ Eliminar"])
+
+    with tab1:
+        st.subheader("Productos en Catálogo")
+        df = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+
+    with tab2:
+        st.subheader("Agregar Nuevo Producto")
+        with st.form("nuevo_producto", clear_on_submit=True):
+            nombre_n = st.text_input("Nombre del Producto")
+            precio_n = st.number_input("Precio (₡)", min_value=0, step=100)
+            stock_n = st.number_input("Cantidad inicial", min_value=0, step=1)
+            if st.form_submit_button("💾 Guardar"):
+                if nombre_n:
+                    c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (nombre_n, precio_n, stock_n))
                     conn.commit()
-                    st.success(f"Producto {nombre} agregado")
+                    st.success(f"'{nombre_n}' agregado correctamente.")
                     st.rerun()
 
-    st.subheader("Productos Actuales")
-    df = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos", conn)
-    st.dataframe(df, use_container_width=True)
-    
-    st.write("---")
-    st.subheader("🗑️ Eliminar Producto del Catálogo")
-    # Selección de producto para eliminar mediante nombre
-    nombres_prods = df['nombre'].tolist()
-    if nombres_prods:
-        prod_a_borrar = st.selectbox("Seleccione el producto que desea eliminar permanentemente:", nombres_prods)
-        if st.button("❌ Eliminar Producto"):
-            c.execute("DELETE FROM productos WHERE nombre=?", (prod_a_borrar,))
-            conn.commit()
-            st.success(f"Producto '{prod_a_borrar}' eliminado.")
-            st.rerun()
+    with tab3:
+        st.subheader("Modificar Producto Existente")
+        prods_list = pd.read_sql_query("SELECT * FROM productos ORDER BY nombre ASC", conn)
+        
+        if not prods_list.empty:
+            # Crear lista de nombres para el selector
+            nombres = prods_list['nombre'].tolist()
+            seleccionado = st.selectbox("Seleccione el producto a editar o eliminar:", nombres)
+            
+            # Obtener datos del producto seleccionado
+            datos_p = prods_list[prods_list['nombre'] == seleccionado].iloc[0]
+            
+            with st.form("editar_producto"):
+                col_e1, col_e2 = st.columns(2)
+                nuevo_nombre = col_e1.text_input("Editar Nombre", value=datos_p['nombre'])
+                nuevo_precio = col_e2.number_input("Editar Precio (₡)", value=float(datos_p['precio']), step=50.0)
+                nuevo_stock = st.number_input("Ajustar Stock Actual", value=int(datos_p['stock']), step=1)
+                
+                col_b1, col_b2 = st.columns(2)
+                if col_b1.form_submit_button("🔄 Actualizar Datos"):
+                    c.execute("UPDATE productos SET nombre=?, precio=?, stock=? WHERE id=?", 
+                              (nuevo_nombre, nuevo_precio, nuevo_stock, datos_p['id']))
+                    conn.commit()
+                    st.success("¡Producto actualizado!")
+                    st.rerun()
+                
+                if col_b2.form_submit_button("🗑️ Eliminar Permanentemente"):
+                    c.execute("DELETE FROM productos WHERE id=?", (datos_p['id'],))
+                    conn.commit()
+                    st.warning(f"'{seleccionado}' ha sido eliminado.")
+                    st.rerun()
+        else:
+            st.info("No hay productos para editar.")
 
 # --- SECCIÓN REPORTE ---
 elif choice == "📊 Reporte":
@@ -156,9 +183,6 @@ elif choice == "📊 Reporte":
         # ELIMINAR VENTA CON SELECCIÓN
         st.write("---")
         st.subheader("🗑️ Eliminar Venta y Devolver Stock")
-        st.write("Seleccione la venta de la lista para proceder con el borrado:")
-        
-        # Creamos una lista amigable para el selector: "ID - Fecha - Total - Cliente"
         df_v['display'] = df_v['id'].astype(str) + " | " + df_v['fecha'] + " | ₡" + df_v['total'].astype(int).astype(str) + " | " + df_v['cliente']
         opciones_ventas = df_v['display'].tolist()
         
@@ -174,7 +198,6 @@ elif choice == "📊 Reporte":
             col_si, col_no = st.columns(2)
             
             if col_si.button("SÍ, ELIMINAR Y DEVOLVER STOCK"):
-                # Procesar devolución de stock
                 items_venta = detalle_seleccionado.split(", ")
                 for item in items_venta:
                     try:
