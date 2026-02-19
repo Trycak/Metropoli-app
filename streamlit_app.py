@@ -71,7 +71,6 @@ if choice == "🛒 Ventas":
             metodo = st.selectbox("Método de Pago", ["Efectivo", "SINPE Móvil", "Crédito"])
             cliente = ""
             if metodo == "Crédito":
-                # Buscar clientes que ya tienen deudas para facilitar la selección
                 clientes_previos = pd.read_sql_query("SELECT DISTINCT cliente FROM ventas WHERE metodo = 'Crédito'", conn)['cliente'].tolist()
                 cliente = st.selectbox("Seleccionar Cliente Existente", ["-- Nuevo Cliente --"] + clientes_previos)
                 if cliente == "-- Nuevo Cliente --":
@@ -85,12 +84,11 @@ if choice == "🛒 Ventas":
                     detalle = ", ".join([f"{i['nombre']}({i['cantidad']})" for i in st.session_state.carrito.values()])
                     c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente) VALUES (?,?,?,?,?)", 
                               (fecha, total, metodo, detalle, cliente if cliente else ""))
-                    # Restar Stock
                     for pid, item in st.session_state.carrito.items():
                         c.execute("UPDATE productos SET stock = stock - ? WHERE id = ?", (item['cantidad'], int(pid)))
                     conn.commit()
                     st.session_state.carrito = {}
-                    st.success("¡Venta/Crédito registrado!")
+                    st.success("¡Venta registrada!")
                     st.rerun()
             
             if st.button("🗑️ Vaciar Carrito"):
@@ -123,46 +121,66 @@ elif choice == "📦 Inventario":
                 if st.form_submit_button("Actualizar"):
                     c.execute("UPDATE productos SET nombre=?, precio=?, stock=? WHERE id=?", (nuevo_n, nuevo_p, nuevo_s, datos_p['id']))
                     conn.commit(); st.rerun()
+                if st.form_submit_button("Eliminar Permanentemente"):
+                    c.execute("DELETE FROM productos WHERE id=?", (datos_p['id'],))
+                    conn.commit(); st.rerun()
 
 # --- SECCIÓN CUENTAS POR COBRAR ---
 elif choice == "📝 Cuentas por Cobrar":
     st.header("Cuentas Pendientes")
     cuentas = pd.read_sql_query("SELECT * FROM ventas WHERE metodo = 'Crédito' ORDER BY id DESC", conn)
-    
     if not cuentas.empty:
-        # Resumen por cliente
         resumen = cuentas.groupby('cliente')['total'].sum().reset_index()
         st.subheader("Resumen de Deudas por Cliente")
         st.table(resumen)
-
         st.divider()
         st.subheader("💳 Cancelar Deuda")
         cliente_sel = st.selectbox("Seleccione Cliente que va a pagar:", resumen['cliente'].tolist())
-        total_deuda = resumen[resumen['cliente'] == cliente_sel]['total'].values[0]
-        
+        total_deuda = resumen[resumen['cliente'] == cliente_sel]['total'].sum()
         st.warning(f"El cliente **{cliente_sel}** debe un total de: **₡{int(total_deuda)}**")
-        
         metodo_pago = st.selectbox("¿Cómo cancela la deuda?", ["Efectivo", "SINPE Móvil"])
-        
         if st.button(f"Confirmar Pago de ₡{int(total_deuda)}"):
-            # Actualizamos todas las ventas de 'Crédito' a su nuevo método de pago
             fecha_pago = datetime.now().strftime("%Y-%m-%d %H:%M")
             c.execute("UPDATE ventas SET metodo = ?, fecha = ? WHERE cliente = ? AND metodo = 'Crédito'", 
                       (metodo_pago, f"{fecha_pago} (Pagado)", cliente_sel))
-            conn.commit()
-            st.success(f"¡Cuenta de {cliente_sel} cancelada con éxito!")
-            st.rerun()
-            
-        st.subheader("Detalle de facturas pendientes")
-        st.dataframe(cuentas[['id', 'fecha', 'cliente', 'total', 'detalle']], use_container_width=True)
+            conn.commit(); st.success(f"¡Cuenta cancelada!"); st.rerun()
     else:
         st.info("No hay cuentas por cobrar pendientes.")
 
-# --- SECCIÓN REPORTE ---
+# --- SECCIÓN REPORTE (CON CONTABILIDAD POR ITEM) ---
 elif choice == "📊 Reporte":
     st.header("Reporte de Ventas")
     df_v = pd.read_sql_query("SELECT * FROM ventas ORDER BY id DESC", conn)
+    
     if not df_v.empty:
-        total_dia = df_v[df_v['metodo'] != 'Crédito']['total'].sum() # Solo lo pagado
-        st.metric("Ingresos Reales (Efectivo/SINPE)", f"₡{int(total_dia)}")
+        # 1. Métricas de Dinero
+        total_ingresos = df_v[df_v['metodo'] != 'Crédito']['total'].sum()
+        total_deuda_pendiente = df_v[df_v['metodo'] == 'Crédito']['total'].sum()
+        
+        c1, c2 = st.columns(2)
+        c1.metric("Ingresos Reales (Caja)", f"₡{int(total_ingresos)}")
+        c2.metric("Pendiente de Cobro", f"₡{int(total_deuda_pendiente)}")
+
+        # 2. CONTABILIDAD POR ARTÍCULO (Lo que habías pedido)
+        st.subheader("📈 Cantidad de Artículos Vendidos")
+        conteo_items = {}
+        for d in df_v['detalle']:
+            partes = d.split(", ")
+            for p in partes:
+                if "(" in p and ")" in p:
+                    try:
+                        nombre_item = p.split("(")[0]
+                        cant_item = int(p.split("(")[1].replace(")", ""))
+                        conteo_items[nombre_item] = conteo_items.get(nombre_item, 0) + cant_item
+                    except:
+                        continue
+        
+        if conteo_items:
+            df_items = pd.DataFrame(list(conteo_items.items()), columns=['Producto', 'Cantidad Vendida'])
+            st.table(df_items.sort_values(by='Cantidad Vendida', ascending=False))
+
+        # 3. Historial de Transacciones
+        st.subheader("📋 Historial de Movimientos")
         st.dataframe(df_v[['id', 'fecha', 'total', 'metodo', 'detalle', 'cliente']], use_container_width=True)
+    else:
+        st.info("No hay ventas registradas.")
