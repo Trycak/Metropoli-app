@@ -2,6 +2,7 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from datetime import datetime
+import io
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Metropoli Basket Academy", page_icon="🏀", layout="wide")
@@ -147,13 +148,13 @@ elif choice == "📝 Cuentas por Cobrar":
     else:
         st.info("No hay cuentas por cobrar pendientes.")
 
-# --- SECCIÓN REPORTE (CON CONTABILIDAD POR ITEM) ---
+# --- SECCIÓN REPORTE (CON EXPORTACIÓN) ---
 elif choice == "📊 Reporte":
     st.header("Reporte de Ventas")
     df_v = pd.read_sql_query("SELECT * FROM ventas ORDER BY id DESC", conn)
     
     if not df_v.empty:
-        # 1. Métricas de Dinero
+        # 1. Métricas
         total_ingresos = df_v[df_v['metodo'] != 'Crédito']['total'].sum()
         total_deuda_pendiente = df_v[df_v['metodo'] == 'Crédito']['total'].sum()
         
@@ -161,7 +162,20 @@ elif choice == "📊 Reporte":
         c1.metric("Ingresos Reales (Caja)", f"₡{int(total_ingresos)}")
         c2.metric("Pendiente de Cobro", f"₡{int(total_deuda_pendiente)}")
 
-        # 2. CONTABILIDAD POR ARTÍCULO (Lo que habías pedido)
+        # 2. Botón de Exportar (NUEVO)
+        st.subheader("📂 Exportar Datos")
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df_v.to_excel(writer, index=False, sheet_name='Ventas_Metropoli')
+        
+        st.download_button(
+            label="📥 Descargar Reporte en Excel",
+            data=output.getvalue(),
+            file_name=f"reporte_metropoli_{datetime.now().strftime('%Y-%m-%d')}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+
+        # 3. Contabilidad por Item
         st.subheader("📈 Cantidad de Artículos Vendidos")
         conteo_items = {}
         for d in df_v['detalle']:
@@ -179,7 +193,7 @@ elif choice == "📊 Reporte":
             df_items = pd.DataFrame(list(conteo_items.items()), columns=['Producto', 'Cantidad Vendida'])
             st.table(df_items.sort_values(by='Cantidad Vendida', ascending=False))
 
-        # 3. Historial de Transacciones
+        # 4. Historial
         st.subheader("📋 Historial de Movimientos")
         st.dataframe(df_v[['id', 'fecha', 'total', 'metodo', 'detalle', 'cliente']], use_container_width=True)
     else:
