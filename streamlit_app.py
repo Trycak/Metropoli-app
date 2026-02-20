@@ -14,17 +14,29 @@ def conectar_db():
 
 conn = conectar_db()
 c = conn.cursor()
-# Tabla de productos
 c.execute('CREATE TABLE IF NOT EXISTS productos (id INTEGER PRIMARY KEY, nombre TEXT, precio REAL, stock INTEGER)')
-# Tabla de ventas (añadimos columna reporte_id)
 try:
     c.execute('ALTER TABLE ventas ADD COLUMN reporte_id INTEGER')
 except:
     pass
 c.execute('CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, fecha TEXT, total REAL, metodo TEXT, detalle TEXT, cliente TEXT, reporte_id INTEGER)')
-# Tabla para controlar los consecutivos de reportes
 c.execute('CREATE TABLE IF NOT EXISTS históricos_reportes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_caja REAL)')
 conn.commit()
+
+# Función para procesar y contar artículos en el detalle
+def contar_articulos(dataframe):
+    conteo = {}
+    for d in dataframe['detalle']:
+        partes = d.split(", ")
+        for p in partes:
+            if "(" in p and ")" in p:
+                try:
+                    nombre_item = p.split("(")[0]
+                    cant_item = int(p.split("(")[1].replace(")", ""))
+                    conteo[nombre_item] = conteo.get(nombre_item, 0) + cant_item
+                except:
+                    continue
+    return conteo
 
 # --- ESTILOS ---
 st.markdown("""
@@ -79,7 +91,6 @@ if choice == "🛒 Ventas":
                 else:
                     fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
                     detalle = ", ".join([f"{i['nombre']}({i['cantidad']})" for i in st.session_state.carrito.values()])
-                    # Se guarda con reporte_id NULL (indicando que es del reporte abierto actual)
                     c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente, reporte_id) VALUES (?,?,?,?,?, NULL)", 
                               (fecha, total, metodo, detalle, cliente if cliente else ""))
                     for pid, item in st.session_state.carrito.items():
@@ -121,7 +132,7 @@ elif choice == "📝 Cuentas por Cobrar":
     if not cuentas.empty:
         resumen = cuentas.groupby('cliente')['total'].sum().reset_index()
         st.table(resumen)
-        cliente_sel = st.selectbox("Seleccione Cliente para pagar:", resumen['cliente'].tolist())
+        cliente_sel = st.selectbox("Seleccione Cliente:", resumen['cliente'].tolist())
         total_deuda = resumen[resumen['cliente'] == cliente_sel]['total'].sum()
         metodo_pago = st.selectbox("Método de pago:", ["Efectivo", "SINPE Móvil"])
         if st.button(f"Confirmar Pago de ₡{int(total_deuda)}"):
@@ -130,59 +141,55 @@ elif choice == "📝 Cuentas por Cobrar":
             conn.commit(); st.success("¡Pagado!"); st.rerun()
     else: st.info("Sin cuentas pendientes.")
 
-# --- SECCIÓN REPORTE (CON CIERRE Y CONSECUTIVOS) ---
+# --- SECCIÓN REPORTE ---
 elif choice == "📊 Reporte":
     st.header("Gestión de Reportes")
-    tab_actual, tab_historial = st.tabs(["📄 Reporte Abierto (Actual)", "📜 Historial de Reportes"])
+    tab_actual, tab_historial = st.tabs(["📄 Reporte Abierto", "📜 Historial"])
 
     with tab_actual:
-        # Solo ventas que NO pertenecen a un reporte cerrado (reporte_id IS NULL)
         df_actual = pd.read_sql_query("SELECT * FROM ventas WHERE reporte_id IS NULL ORDER BY id DESC", conn)
-        
         if not df_actual.empty:
             ingresos_caja = df_actual[df_actual['metodo'] != 'Crédito']['total'].sum()
-            st.metric("Total en Caja (Reporte Actual)", f"₡{int(ingresos_caja)}")
+            st.metric("Total en Caja (Actual)", f"₡{int(ingresos_caja)}")
             
-            st.subheader("Ventas del Turno")
+            # --- TABLA DE ITEMS VENDIDOS (ACTUAL) ---
+            st.subheader("📈 Artículos Vendidos en este Turno")
+            conteo = contar_articulos(df_actual)
+            if conteo:
+                df_c = pd.DataFrame(list(conteo.items()), columns=['Producto', 'Cant']).sort_values(by='Cant', ascending=False)
+                st.table(df_c)
+
+            st.subheader("Detalle de Transacciones")
             st.dataframe(df_actual[['id', 'fecha', 'total', 'metodo', 'detalle', 'cliente']], use_container_width=True)
 
-            st.divider()
-            if st.button("🔴 CERRAR REPORTE E INICIAR NUEVO"):
-                # 1. Crear el registro histórico
+            if st.button("🔴 CERRAR REPORTE"):
                 fecha_cierre = datetime.now().strftime("%Y-%m-%d %H:%M")
                 c.execute("INSERT INTO históricos_reportes (fecha_cierre, total_caja) VALUES (?,?)", (fecha_cierre, ingresos_caja))
                 nuevo_id = c.lastrowid
-                # 2. Asignar el ID de reporte a las ventas actuales
                 c.execute("UPDATE ventas SET reporte_id = ? WHERE reporte_id IS NULL", (nuevo_id,))
-                conn.commit()
-                st.success(f"Reporte #{nuevo_id} cerrado con éxito. Iniciando nuevo reporte...")
-                st.rerun()
-        else:
-            st.info("No hay ventas en el reporte actual. Inicia una venta para ver datos.")
+                conn.commit(); st.success(f"Reporte #{nuevo_id} Cerrado"); st.rerun()
+        else: st.info("No hay ventas actuales.")
 
     with tab_historial:
-        st.subheader("Consulta de Reportes Anteriores")
         reportes_lista = pd.read_sql_query("SELECT * FROM históricos_reportes ORDER BY id DESC", conn)
-        
         if not reportes_lista.empty:
-            # Selector por consecutivo y fecha
-            reportes_lista['info'] = "Reporte #" + reportes_lista['id'].astype(str) + " - " + reportes_lista['fecha_cierre']
-            rep_sel = st.selectbox("Seleccione un reporte para consultar:", reportes_lista['info'].tolist())
+            reportes_lista['info'] = "Rep #" + reportes_lista['id'].astype(str) + " - " + reportes_lista['fecha_cierre']
+            rep_sel = st.selectbox("Seleccione reporte:", reportes_lista['info'].tolist())
             id_rep = int(rep_sel.split("#")[1].split(" - ")[0])
             
-            # Cargar datos de ese reporte específico
             df_hist = pd.read_sql_query("SELECT * FROM ventas WHERE reporte_id = ?", conn, params=(id_rep,))
             
-            col_a, col_b = st.columns(2)
-            col_a.metric("Total Caja", f"₡{int(df_hist[df_hist['metodo'] != 'Crédito']['total'].sum())}")
-            col_b.write(f"**Fecha Cierre:** {reportes_lista[reportes_lista['id']==id_rep]['fecha_cierre'].values[0]}")
-            
+            # --- TABLA DE ITEMS VENDIDOS (HISTORIAL) ---
+            st.subheader(f"📈 Artículos Vendidos en Reporte #{id_rep}")
+            conteo_h = contar_articulos(df_hist)
+            if conteo_h:
+                df_ch = pd.DataFrame(list(conteo_h.items()), columns=['Producto', 'Cant']).sort_values(by='Cant', ascending=False)
+                st.table(df_ch)
+
             st.dataframe(df_hist[['id', 'fecha', 'total', 'metodo', 'detalle', 'cliente']], use_container_width=True)
             
-            # Exportar ese reporte específico a Excel
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_hist.to_excel(writer, index=False)
-            st.download_button("📥 Descargar este Reporte (Excel)", data=output.getvalue(), file_name=f"Reporte_{id_rep}.xlsx")
-        else:
-            st.write("Aún no hay reportes cerrados en el historial.")
+            st.download_button("📥 Descargar Excel", data=output.getvalue(), file_name=f"Reporte_{id_rep}.xlsx")
+        else: st.write("No hay historial.")
