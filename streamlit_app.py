@@ -61,7 +61,7 @@ export const App = () => {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState(null);
 
-  // --- FIREBASE ---
+  // --- FIREBASE LOGIC ---
   useEffect(() => {
     if (!firebaseConfig) { setIsLoading(false); return; }
     const app = initializeApp(firebaseConfig);
@@ -145,17 +145,18 @@ export const App = () => {
         return item ? { ...p, stock: Math.max(0, p.stock - item.quantity) } : p;
     });
     saveState({ salesHistory: [newSale, ...salesHistory], products: updatedProducts, openAccounts: openAccounts.filter(a => a.id !== activeAccountId), activeAccountId: openAccounts.filter(a => a.id !== activeAccountId)[0]?.id || null });
-    setSaleMessage('¡Venta realizada!');
+    setSaleMessage('Venta realizada');
     setTimeout(() => setSaleMessage(''), 3000);
   };
 
   const ProductRow = ({ product }) => {
     const [p, setP] = useState(product.price.toString());
     const [s, setS] = useState(product.stock.toString());
+    
     useEffect(() => { 
         if(document.activeElement?.id !== 'p'+product.id) setP(product.price.toString());
         if(document.activeElement?.id !== 's'+product.id) setS(product.stock.toString());
-    }, [product]);
+    }, [product.price, product.stock]);
 
     return (
         <tr className="border-b">
@@ -202,7 +203,7 @@ export const App = () => {
           <div className="p-8 overflow-y-auto h-full">
             <h1 className="text-2xl font-bold mb-6">Inventario</h1>
             <table className="w-full bg-white rounded-xl shadow">
-              <thead className="bg-gray-50 text-left"><tr><th className="p-4">Producto</th><th className="p-4">Precio</th><th className="p-4">Stock</th><th className="p-4 text-center">Acción</th></tr></thead>
+              <thead className="bg-gray-50 text-left"><tr><th className="p-4">Producto</th><th className="p-4">Precio</th><th className="p-4">Stock</th><th className="p-4 text-center">Accion</th></tr></thead>
               <tbody>{products.map(p=><ProductRow key={p.id} product={p}/>)}</tbody>
             </table>
           </div>
@@ -210,7 +211,7 @@ export const App = () => {
       </main>
       {isDeleteModalOpen && (
           <Modal title="Eliminar" onClose={()=>setIsDeleteModalOpen(false)}>
-              <p>¿Eliminar {productToDelete?.name}?</p>
+              <p>Eliminar {productToDelete?.name}?</p>
               <button onClick={()=>{saveState({products:products.filter(x=>x.id!==productToDelete.id)}); setIsDeleteModalOpen(false)}} className="w-full py-2 bg-red-600 text-white rounded mt-4">Confirmar</button>
           </Modal>
       )}
