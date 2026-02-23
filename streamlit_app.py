@@ -3,7 +3,7 @@ import { ShoppingCart, Package, DollarSign, BarChart2, Plus, X, List, Trash2, Us
 
 // --- FIREBASE IMPORTS ---
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 
 // --- CONFIGURACIONES ---
@@ -21,22 +21,30 @@ const initialAccounts = [
   { id: Date.now(), name: 'Venta 1', items: [], time: Date.now() },
 ];
 
+// --- COMPONENTE LOGO ---
 const Logo = () => {
     const logoImageUrl = "https://www.fecobacr.com/wp-content/uploads/2025/06/LSB-Metropoli.jpg";
     return (
         <div className="flex items-center space-x-2 p-4">
-            <img src={logoImageUrl} alt="Logo" className="w-10 h-10 object-contain rounded-full border-2 border-white shadow-md" />
+            <img 
+                src={logoImageUrl} 
+                alt="Logo" 
+                className="w-10 h-10 object-contain rounded-full border-2 border-white shadow-md"
+            />
             <h1 className="text-xl font-black text-white leading-tight">MBA Cafe</h1>
         </div>
     );
 };
 
+// --- MODAL ---
 const Modal = ({ title, onClose, children }) => (
     <div className="fixed inset-0 bg-gray-900 bg-opacity-70 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg p-6" onClick={e => e.stopPropagation()}>
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6" onClick={e => e.stopPropagation()}>
         <div className="flex justify-between items-center border-b pb-3 mb-4">
           <h3 className="text-xl font-bold text-gray-900">{title}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-6 h-6" />
+          </button>
         </div>
         {children}
       </div>
@@ -60,6 +68,7 @@ export const App = () => {
   const [newAccountName, setNewAccountName] = useState('');
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
   // --- FIREBASE LOGIC ---
   useEffect(() => {
@@ -125,7 +134,7 @@ export const App = () => {
   };
 
   const addToCart = (product) => {
-    if (!activeAccount) return;
+    if (!activeAccount || product.stock <= 0) return;
     const updatedAccounts = openAccounts.map(acc => {
       if (acc.id === activeAccountId) {
         const exist = acc.items.find(i => i.id === product.id);
@@ -145,25 +154,26 @@ export const App = () => {
         return item ? { ...p, stock: Math.max(0, p.stock - item.quantity) } : p;
     });
     saveState({ salesHistory: [newSale, ...salesHistory], products: updatedProducts, openAccounts: openAccounts.filter(a => a.id !== activeAccountId), activeAccountId: openAccounts.filter(a => a.id !== activeAccountId)[0]?.id || null });
-    setSaleMessage('Venta realizada');
+    setSaleMessage('Venta guardada');
     setTimeout(() => setSaleMessage(''), 3000);
   };
 
+  // --- FILA DE INVENTARIO REPARADA ---
   const ProductRow = ({ product }) => {
     const [p, setP] = useState(product.price.toString());
     const [s, setS] = useState(product.stock.toString());
-    
-    useEffect(() => { 
-        if(document.activeElement?.id !== 'p'+product.id) setP(product.price.toString());
-        if(document.activeElement?.id !== 's'+product.id) setS(product.stock.toString());
+
+    useEffect(() => {
+        if (document.activeElement?.id !== 'p' + product.id) setP(product.price.toString());
+        if (document.activeElement?.id !== 's' + product.id) setS(product.stock.toString());
     }, [product.price, product.stock]);
 
     return (
-        <tr className="border-b">
+        <tr className="border-b hover:bg-gray-50">
             <td className="p-4 font-medium">{product.name}</td>
             <td className="p-4"><input id={'p'+product.id} type="number" value={p} onChange={e=>setP(e.target.value)} onBlur={()=>saveState({products: products.map(x=>x.id===product.id?{...x, price: parseFloat(p)}:x)})} className="w-24 p-1 border rounded" /></td>
             <td className="p-4"><input id={'s'+product.id} type="number" value={s} onChange={e=>setS(e.target.value)} onBlur={()=>saveState({products: products.map(x=>x.id===product.id?{...x, stock: parseInt(s)}:x)})} className="w-20 p-1 border rounded" /></td>
-            <td className="p-4 text-center"><button onClick={()=>{setProductToDelete(product); setIsDeleteModalOpen(true)}} className="text-red-500"><Trash2 className="w-5 h-5" /></button></td>
+            <td className="p-4 text-center"><button onClick={()=>{setProductToDelete(product); setIsDeleteModalOpen(true)}} className="text-red-500 hover:bg-red-50 p-2 rounded-full"><Trash2 className="w-5 h-5" /></button></td>
         </tr>
     );
   };
@@ -186,9 +196,18 @@ export const App = () => {
               {openAccounts.map(a=>(<div key={a.id} onClick={()=>saveState({activeAccountId:a.id})} className={`p-3 rounded-lg mb-2 cursor-pointer ${activeAccountId===a.id?'bg-[#279aa0] text-white':'bg-gray-100'}`}>{a.name}</div>))}
             </div>
             <div className="w-2/4 p-4 overflow-y-auto">
-              <div className="flex justify-between items-center mb-4"><h1 className="text-2xl font-bold">{activeAccount?.name}</h1>{saleMessage && <span className="text-green-600 font-bold">{saleMessage}</span>}</div>
+              <div className="flex justify-between items-center mb-4">
+                  <h1 className="text-2xl font-bold">{activeAccount?.name || 'Seleccione Cuenta'}</h1>
+                  {saleMessage && <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-sm">{saleMessage}</span>}
+              </div>
               <div className="grid grid-cols-2 gap-4">
-                {products.map(p=>(<button key={p.id} onClick={()=>addToCart(p)} className="p-4 border rounded-xl bg-white hover:border-[#279aa0] text-left"><p className="font-bold">{p.name}</p><p className="text-xs text-gray-500">{p.stock} disponibles</p><p className="text-lg font-bold mt-2">C{p.price}</p></button>))}
+                {products.map(p=>(
+                    <button key={p.id} onClick={()=>addToCart(p)} className="p-4 border rounded-xl bg-white hover:border-[#279aa0] text-left">
+                        <p className="font-bold">{p.name}</p>
+                        <p className="text-xs text-gray-500">{p.stock} disponibles</p> 
+                        <p className="text-lg font-bold mt-2">C{p.price}</p>
+                    </button>
+                ))}
               </div>
             </div>
             <div className="w-1/4 p-4 bg-gray-50 flex flex-col">
@@ -202,8 +221,10 @@ export const App = () => {
         ) : (
           <div className="p-8 overflow-y-auto h-full">
             <h1 className="text-2xl font-bold mb-6">Inventario</h1>
-            <table className="w-full bg-white rounded-xl shadow">
-              <thead className="bg-gray-50 text-left"><tr><th className="p-4">Producto</th><th className="p-4">Precio</th><th className="p-4">Stock</th><th className="p-4 text-center">Accion</th></tr></thead>
+            <table className="w-full bg-white rounded-xl shadow overflow-hidden">
+              <thead className="bg-gray-50 text-left">
+                <tr><th className="p-4">Producto</th><th className="p-4">Precio</th><th className="p-4">Stock</th><th className="p-4 text-center">Accion</th></tr>
+              </thead>
               <tbody>{products.map(p=><ProductRow key={p.id} product={p}/>)}</tbody>
             </table>
           </div>
@@ -211,8 +232,8 @@ export const App = () => {
       </main>
       {isDeleteModalOpen && (
           <Modal title="Eliminar" onClose={()=>setIsDeleteModalOpen(false)}>
-              <p>Eliminar {productToDelete?.name}?</p>
-              <button onClick={()=>{saveState({products:products.filter(x=>x.id!==productToDelete.id)}); setIsDeleteModalOpen(false)}} className="w-full py-2 bg-red-600 text-white rounded mt-4">Confirmar</button>
+              <p className="mb-4">Desea eliminar {productToDelete?.name}?</p>
+              <button onClick={()=>{saveState({products:products.filter(x=>x.id!==productToDelete.id)}); setIsDeleteModalOpen(false)}} className="w-full py-2 bg-red-600 text-white rounded font-bold">Confirmar</button>
           </Modal>
       )}
     </div>
