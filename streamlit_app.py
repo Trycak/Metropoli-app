@@ -23,7 +23,6 @@ c.execute('CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, fecha TEXT
 c.execute('CREATE TABLE IF NOT EXISTS históricos_reportes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_caja REAL)')
 conn.commit()
 
-# Función para procesar y contar artículos en el detalle
 def contar_articulos(dataframe):
     conteo = {}
     for d in dataframe['detalle']:
@@ -38,11 +37,47 @@ def contar_articulos(dataframe):
                     continue
     return conteo
 
-# --- ESTILOS ---
+# --- ESTILOS PERSONALIZADOS ---
 st.markdown("""
     <style>
     .main { background-color: #f5f5f5; }
-    .stButton>button { width: 100%; border-radius: 10px; height: 3em; font-weight: bold; }
+    
+    /* Forzar que todos los botones de productos tengan el mismo tamaño y estilo */
+    div.stButton > button {
+        width: 100% !important;
+        height: 120px !important;  /* Altura fija para simetría */
+        border-radius: 15px !important;
+        font-weight: bold !important;
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        justify-content: center !important;
+        text-align: center !important;
+        white-space: normal !important;
+        line-height: 1.2 !important;
+        padding: 10px !important;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1) !important;
+    }
+
+    /* Estilo para productos CON stock */
+    div.stButton > button[kind="secondary"] {
+        background-color: white;
+        color: #333;
+        border: 2px solid #279aa0;
+    }
+
+    /* Estilo para productos SIN stock (Sombreado/Inactivo) */
+    div.stButton > button:disabled {
+        background-color: #e0e0e0 !important;
+        color: #888 !important;
+        border: 2px solid #bbb !important;
+        cursor: not-allowed !important;
+    }
+    
+    /* Botón finalizar venta */
+    div.stButton > button[kind="primary"] {
+        height: 3em !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -57,19 +92,32 @@ choice = st.sidebar.radio("Menú Principal", menu)
 if choice == "🛒 Ventas":
     if 'carrito' not in st.session_state: st.session_state.carrito = {}
     col1, col2 = st.columns([2, 1])
+    
     with col1:
         st.write("### Productos Disponibles")
-        prods = pd.read_sql_query("SELECT * FROM productos WHERE stock > 0 ORDER BY nombre ASC", conn)
-        if prods.empty: st.warning("No hay productos en inventario.")
+        # Cambiamos la consulta: Ahora traemos TODOS los productos (aunque tengan stock 0)
+        prods = pd.read_sql_query("SELECT * FROM productos ORDER BY nombre ASC", conn)
+        
+        if prods.empty: 
+            st.warning("No hay productos en la base de datos.")
         else:
             columnas = st.columns(3)
             for i, row in prods.iterrows():
                 with columnas[i % 3]:
-                    if st.button(f"{row['nombre']}\n₡{int(row['precio'])}", key=f"btn_{row['id']}"):
+                    # Preparamos el texto del botón
+                    nombre_formateado = f"{row['nombre']}\n\n₡{int(row['precio']):,}\n(Stock: {row['stock']})"
+                    
+                    # Lógica de stock: Si es 0, el botón se desactiva
+                    esta_agotado = row['stock'] <= 0
+                    
+                    if st.button(nombre_formateado, key=f"btn_{row['id']}", disabled=esta_agotado):
                         pid = str(row['id'])
-                        if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
-                        else: st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
+                        if pid in st.session_state.carrito: 
+                            st.session_state.carrito[pid]['cantidad'] += 1
+                        else: 
+                            st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
                         st.rerun()
+
     with col2:
         st.write("### Detalle de Venta")
         if st.session_state.carrito:
@@ -77,15 +125,18 @@ if choice == "🛒 Ventas":
             for pid, item in list(st.session_state.carrito.items()):
                 subtotal = item['precio'] * item['cantidad']
                 total += subtotal
-                st.write(f"**{item['nombre']}** x{item['cantidad']} = ₡{int(subtotal)}")
+                st.write(f"**{item['nombre']}** x{item['cantidad']} = ₡{int(subtotal):,}")
+            
             st.divider()
-            st.write(f"## Total: ₡{int(total)}")
+            st.write(f"## Total: ₡{int(total):,}")
             metodo = st.selectbox("Método de Pago", ["Efectivo", "SINPE Móvil", "Crédito"])
             cliente = ""
             if metodo == "Crédito":
-                clientes_previos = pd.read_sql_query("SELECT DISTINCT cliente FROM ventas WHERE metodo = 'Crédito'", conn)['cliente'].tolist()
+                clientes_df = pd.read_sql_query("SELECT DISTINCT cliente FROM ventas WHERE metodo = 'Crédito'", conn)
+                clientes_previos = clientes_df['cliente'].tolist() if not clientes_df.empty else []
                 cliente = st.selectbox("Seleccionar Cliente", ["-- Nuevo Cliente --"] + clientes_previos)
                 if cliente == "-- Nuevo Cliente --": cliente = st.text_input("Nombre del Nuevo Cliente")
+            
             if st.button("✅ Finalizar Venta", type="primary"):
                 if metodo == "Crédito" and not cliente: st.error("Debe asignar un nombre.")
                 else:
@@ -96,9 +147,13 @@ if choice == "🛒 Ventas":
                     for pid, item in st.session_state.carrito.items():
                         c.execute("UPDATE productos SET stock = stock - ? WHERE id = ?", (item['cantidad'], int(pid)))
                     conn.commit(); st.session_state.carrito = {}; st.success("¡Venta registrada!"); st.rerun()
+            
+            if st.button("🗑️ Vaciar Carrito"):
+                st.session_state.carrito = {}
+                st.rerun()
         else: st.info("El carrito está vacío")
 
-# --- SECCIÓN INVENTARIO ---
+# --- LAS DEMÁS SECCIONES (INVENTARIO, CUENTAS, REPORTE) SE MANTIENEN IGUAL ---
 elif choice == "📦 Inventario":
     st.header("Gestión de Inventario")
     tab1, tab2, tab3 = st.tabs(["📋 Lista Actual", "➕ Nuevo Producto", "✏️ Editar / 🗑️ Eliminar"])
@@ -125,7 +180,6 @@ elif choice == "📦 Inventario":
                 if st.form_submit_button("Eliminar Permanentemente"):
                     c.execute("DELETE FROM productos WHERE id=?", (datos_p['id'],)); conn.commit(); st.rerun()
 
-# --- SECCIÓN CUENTAS POR COBRAR ---
 elif choice == "📝 Cuentas por Cobrar":
     st.header("Cuentas Pendientes")
     cuentas = pd.read_sql_query("SELECT * FROM ventas WHERE metodo = 'Crédito' ORDER BY id DESC", conn)
@@ -135,33 +189,27 @@ elif choice == "📝 Cuentas por Cobrar":
         cliente_sel = st.selectbox("Seleccione Cliente:", resumen['cliente'].tolist())
         total_deuda = resumen[resumen['cliente'] == cliente_sel]['total'].sum()
         metodo_pago = st.selectbox("Método de pago:", ["Efectivo", "SINPE Móvil"])
-        if st.button(f"Confirmar Pago de ₡{int(total_deuda)}"):
+        if st.button(f"Confirmar Pago de ₡{int(total_deuda):,}"):
             fecha_pago = datetime.now().strftime("%Y-%m-%d %H:%M")
             c.execute("UPDATE ventas SET metodo = ?, fecha = ? WHERE cliente = ? AND metodo = 'Crédito'", (metodo_pago, f"{fecha_pago} (Pagado)", cliente_sel))
             conn.commit(); st.success("¡Pagado!"); st.rerun()
     else: st.info("Sin cuentas pendientes.")
 
-# --- SECCIÓN REPORTE ---
 elif choice == "📊 Reporte":
     st.header("Gestión de Reportes")
     tab_actual, tab_historial = st.tabs(["📄 Reporte Abierto", "📜 Historial"])
-
     with tab_actual:
         df_actual = pd.read_sql_query("SELECT * FROM ventas WHERE reporte_id IS NULL ORDER BY id DESC", conn)
         if not df_actual.empty:
             ingresos_caja = df_actual[df_actual['metodo'] != 'Crédito']['total'].sum()
-            st.metric("Total en Caja (Actual)", f"₡{int(ingresos_caja)}")
-            
-            # --- TABLA DE ITEMS VENDIDOS (ACTUAL) ---
+            st.metric("Total en Caja (Actual)", f"₡{int(ingresos_caja):,}")
             st.subheader("📈 Artículos Vendidos en este Turno")
             conteo = contar_articulos(df_actual)
             if conteo:
                 df_c = pd.DataFrame(list(conteo.items()), columns=['Producto', 'Cant']).sort_values(by='Cant', ascending=False)
                 st.table(df_c)
-
             st.subheader("Detalle de Transacciones")
             st.dataframe(df_actual[['id', 'fecha', 'total', 'metodo', 'detalle', 'cliente']], use_container_width=True)
-
             if st.button("🔴 CERRAR REPORTE"):
                 fecha_cierre = datetime.now().strftime("%Y-%m-%d %H:%M")
                 c.execute("INSERT INTO históricos_reportes (fecha_cierre, total_caja) VALUES (?,?)", (fecha_cierre, ingresos_caja))
@@ -169,25 +217,19 @@ elif choice == "📊 Reporte":
                 c.execute("UPDATE ventas SET reporte_id = ? WHERE reporte_id IS NULL", (nuevo_id,))
                 conn.commit(); st.success(f"Reporte #{nuevo_id} Cerrado"); st.rerun()
         else: st.info("No hay ventas actuales.")
-
     with tab_historial:
         reportes_lista = pd.read_sql_query("SELECT * FROM históricos_reportes ORDER BY id DESC", conn)
         if not reportes_lista.empty:
             reportes_lista['info'] = "Rep #" + reportes_lista['id'].astype(str) + " - " + reportes_lista['fecha_cierre']
             rep_sel = st.selectbox("Seleccione reporte:", reportes_lista['info'].tolist())
             id_rep = int(rep_sel.split("#")[1].split(" - ")[0])
-            
             df_hist = pd.read_sql_query("SELECT * FROM ventas WHERE reporte_id = ?", conn, params=(id_rep,))
-            
-            # --- TABLA DE ITEMS VENDIDOS (HISTORIAL) ---
             st.subheader(f"📈 Artículos Vendidos en Reporte #{id_rep}")
             conteo_h = contar_articulos(df_hist)
             if conteo_h:
                 df_ch = pd.DataFrame(list(conteo_h.items()), columns=['Producto', 'Cant']).sort_values(by='Cant', ascending=False)
                 st.table(df_ch)
-
             st.dataframe(df_hist[['id', 'fecha', 'total', 'metodo', 'detalle', 'cliente']], use_container_width=True)
-            
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 df_hist.to_excel(writer, index=False)
