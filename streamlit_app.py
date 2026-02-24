@@ -3,6 +3,7 @@ import sqlite3
 import pandas as pd
 from datetime import datetime
 import io
+import xml.etree.ElementTree as ET
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Metropoli Basket Academy", page_icon="🏀", layout="wide")
@@ -14,211 +15,218 @@ def conectar_db():
 
 conn = conectar_db()
 c = conn.cursor()
+
+# Asegurar tablas
 c.execute('CREATE TABLE IF NOT EXISTS productos (id INTEGER PRIMARY KEY, nombre TEXT, precio REAL, stock INTEGER)')
-try:
-    c.execute('ALTER TABLE ventas ADD COLUMN reporte_id INTEGER')
-except:
-    pass
 c.execute('CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, fecha TEXT, total REAL, metodo TEXT, detalle TEXT, cliente TEXT, reporte_id INTEGER)')
 c.execute('CREATE TABLE IF NOT EXISTS históricos_reportes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_caja REAL)')
 conn.commit()
 
-# Función para procesar y contar artículos
-def contar_articulos(dataframe):
-    conteo = {}
-    for d in dataframe['detalle']:
-        partes = d.split(", ")
-        for p in partes:
-            if "(" in p and ")" in p:
-                try:
-                    nombre_item = p.split("(")[0]
-                    cant_item = int(p.split("(")[1].replace(")", ""))
-                    conteo[nombre_item] = conteo.get(nombre_item, 0) + cant_item
-                except:
-                    continue
-    return conteo
-
-# --- ESTILOS ---
+# --- ESTILOS VISUALES PERSONALIZADOS ---
 st.markdown("""
     <style>
-    .main { background-color: #f5f5f5; }
-    .stButton>button { width: 100%; border-radius: 10px; height: 3em; font-weight: bold; }
+    /* Fondo principal azul oscuro */
+    .stApp {
+        background-color: #134971 !important;
+    }
+
+    /* BARRA LATERAL (Color solicitado #28a5a9) */
+    [data-testid="stSidebar"] {
+        background-color: #28a5a9 !important;
+    }
+
+    /* Texto de la barra lateral en blanco para contraste */
+    [data-testid="stSidebar"] .stMarkdown p, 
+    [data-testid="stSidebar"] h1, 
+    [data-testid="stSidebar"] h2, 
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] div[role="radiogroup"] label {
+        color: white !important;
+        font-weight: bold !important;
+        font-size: 18px !important;
+    }
+
+    /* Contenedores de contenido */
+    .main .block-container {
+        background-color: rgba(255, 255, 255, 0.05);
+        border-radius: 20px;
+        padding: 2rem;
+    }
+
+    /* Títulos y textos generales en blanco */
+    h1, h2, h3, p, span, label {
+        color: white !important;
+    }
+
+    /* BOTONES DE PRODUCTOS (Blancos con texto azul) */
+    div.stButton > button[key^="p_"] {
+        background-color: #ffffff !important;
+        color: #134971 !important;
+        border: none !important;
+        border-radius: 12px !important;
+        height: 110px !important;
+        width: 100% !important;
+        font-weight: bold !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2) !important;
+        transition: transform 0.2s ease !important;
+    }
+    div.stButton > button[key^="p_"]:hover {
+        transform: scale(1.03) !important;
+        background-color: #f0f0f0 !important;
+    }
+
+    /* BOTÓN ELIMINAR (X) CIRCULAR */
+    div[data-testid="column"] button[key^="del_"] {
+        background-color: #ff4b4b !important;
+        color: white !important;
+        border-radius: 50% !important;
+        width: 32px !important;
+        height: 32px !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+
+    /* Tablas editables */
+    .stDataEditor {
+        background-color: white !important;
+        border-radius: 10px !important;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# 3. Encabezado
-st.title("🏀 Metropoli Basket Academy")
+# --- FUNCIONES ---
+def obtener_conteo_productos(df):
+    conteo = {}
+    for detalle in df['detalle']:
+        partes = detalle.split(", ")
+        for p in partes:
+            if "(" in p and ")" in p:
+                try:
+                    nombre = p.split("(")[0]; cantidad = int(p.split("(")[1].replace(")", ""))
+                    conteo[nombre] = conteo.get(nombre, 0) + cantidad
+                except: continue
+    return pd.DataFrame(list(conteo.items()), columns=['Producto', 'Cantidad']).sort_values(by='Cantidad', ascending=False) if conteo else pd.DataFrame()
 
-# 4. Menú Lateral
-menu = ["🛒 Ventas", "📦 Inventario", "📝 Cuentas por Cobrar", "📊 Reporte"]
-choice = st.sidebar.radio("Menú Principal", menu)
+def convertir_a_xml(df):
+    root = ET.Element("ReporteVentas")
+    for _, row in df.iterrows():
+        venta = ET.SubElement(root, "Venta")
+        for field in df.columns:
+            child = ET.SubElement(venta, field)
+            child.text = str(row[field])
+    return ET.tostring(root, encoding='utf-8', method='xml')
 
-# --- SECCIÓN VENTAS ---
+def to_csv(df):
+    return df.to_csv(index=False).encode('utf-8')
+
+# --- MENÚ ---
+st.sidebar.title("🏀 Metropoli Cafe")
+menu = ["🛒 Ventas", "📊 Resumen de Productos", "📦 Inventario", "📝 Cuentas por Cobrar", "📋 Reporte de Pagos"]
+choice = st.sidebar.radio("Navegación", menu)
+
 if choice == "🛒 Ventas":
     if 'carrito' not in st.session_state: st.session_state.carrito = {}
-    col1, col2 = st.columns([2, 1])
-    
-    with col1:
-        st.write("### Productos Disponibles")
-        prods = pd.read_sql_query("SELECT * FROM productos WHERE stock > 0 ORDER BY nombre ASC", conn)
-        if prods.empty: st.warning("No hay productos en inventario.")
-        else:
-            columnas = st.columns(3)
-            for i, row in prods.iterrows():
-                with columnas[i % 3]:
-                    if st.button(f"{row['nombre']}\n₡{int(row['precio'])}", key=f"btn_{row['id']}"):
-                        pid = str(row['id'])
-                        if pid in st.session_state.carrito:
-                            st.session_state.carrito[pid]['cantidad'] += 1
-                        else:
-                            st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
-                        st.rerun()
-
-    with col2:
-        st.write("### Detalle de Venta")
-        if st.session_state.carrito:
-            total = 0
-            # MOSTRAR CADA ITEM CON OPCIÓN DE ELIMINAR (BOTÓN ❌)
-            for pid, item in list(st.session_state.carrito.items()):
-                subtotal = item['precio'] * item['cantidad']
-                total += subtotal
-                c_art1, c_art2 = st.columns([4, 1])
-                c_art1.write(f"**{item['nombre']}** x{item['cantidad']} (₡{int(subtotal)})")
-                if c_art2.button("❌", key=f"del_{pid}"):
-                    del st.session_state.carrito[pid]
+    col_prods, col_cart = st.columns([2, 1])
+    with col_prods:
+        st.subheader("🛒 Productos Disponibles")
+        prods = pd.read_sql_query("SELECT * FROM productos ORDER BY nombre ASC", conn)
+        grid = st.columns(3)
+        for i, row in prods.iterrows():
+            with grid[i % 3]:
+                if st.button(f"{row['nombre']}\n({int(row['stock'])})\n₡{int(row['precio'])}", key=f"p_{row['id']}", disabled=row['stock']<=0):
+                    pid = str(row['id'])
+                    if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
+                    else: st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
                     st.rerun()
-            
+    with col_cart:
+        st.subheader("🛒 Carrito")
+        if st.session_state.carrito:
+            total_v = 0
+            for pid, item in list(st.session_state.carrito.items()):
+                sub = item['precio'] * item['cantidad']; total_v += sub
+                c1, c2 = st.columns([5, 1])
+                c1.write(f"**{item['nombre']} x{item['cantidad']}** (₡{int(sub)})")
+                if c2.button("X", key=f"del_{pid}"):
+                    del st.session_state.carrito[pid]; st.rerun()
             st.divider()
-            st.write(f"## Total: ₡{int(total)}")
-            
-            metodo = st.selectbox("Método de Pago", ["Efectivo", "SINPE Móvil", "Crédito"])
-            cliente = ""
+            metodo = st.selectbox("Forma de Pago", ["Efectivo", "SINPE Móvil", "Crédito"])
+            cliente_n = ""
             if metodo == "Crédito":
-                clientes_previos = pd.read_sql_query("SELECT DISTINCT cliente FROM ventas WHERE metodo = 'Crédito'", conn)['cliente'].tolist()
-                cliente = st.selectbox("Seleccionar Cliente", ["-- Nuevo Cliente --"] + clientes_previos)
-                if cliente == "-- Nuevo Cliente --": cliente = st.text_input("Nombre del Nuevo Cliente")
-            
-            if st.button("✅ Finalizar Venta", type="primary"):
-                if metodo == "Crédito" and not cliente: st.error("Debe asignar un nombre.")
+                clientes_db = pd.read_sql_query("SELECT DISTINCT cliente FROM ventas WHERE metodo = 'Crédito' AND cliente != ''", conn)['cliente'].tolist()
+                opc = st.selectbox("Seleccionar Cliente", ["-- Nuevo --"] + clientes_db)
+                cliente_n = st.text_input("Nombre del Cliente") if opc == "-- Nuevo --" else opc
+            if st.button("✅ FINALIZAR VENTA", type="primary", use_container_width=True):
+                if metodo == "Crédito" and not cliente_n: st.error("Falta nombre")
                 else:
-                    fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
-                    detalle = ", ".join([f"{i['nombre']}({i['cantidad']})" for i in st.session_state.carrito.values()])
-                    c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente, reporte_id) VALUES (?,?,?,?,?, NULL)", 
-                              (fecha, total, metodo, detalle, cliente if cliente else ""))
+                    det = ", ".join([f"{v['nombre']}({v['cantidad']})" for v in st.session_state.carrito.values()])
+                    c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente) VALUES (?,?,?,?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), total_v, metodo, det, cliente_n))
                     for pid, item in st.session_state.carrito.items():
                         c.execute("UPDATE productos SET stock = stock - ? WHERE id = ?", (item['cantidad'], int(pid)))
-                    conn.commit(); st.session_state.carrito = {}; st.success("¡Venta registrada!"); st.rerun()
-            
-            if st.button("🗑️ Vaciar Carrito"):
-                st.session_state.carrito = {}
-                st.rerun()
+                    conn.commit(); st.session_state.carrito = {}; st.success("¡Venta Lista!"); st.rerun()
         else: st.info("El carrito está vacío")
 
-# --- SECCIÓN INVENTARIO ---
 elif choice == "📦 Inventario":
-    st.header("Gestión de Inventario")
-    tab1, tab2, tab3 = st.tabs(["📋 Lista Actual", "➕ Nuevo Producto", "✏️ Editar / 🗑️ Eliminar"])
-    
-    with tab1:
-        df = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
-        st.dataframe(df, use_container_width=True, hide_index=True)
-    
-    with tab2:
-        with st.form("nuevo_p", clear_on_submit=True):
-            n = st.text_input("Nombre"); p = st.number_input("Precio", min_value=0); s = st.number_input("Stock", min_value=0)
-            if st.form_submit_button("Guardar"):
-                if n:
-                    c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (n, p, s))
-                    conn.commit(); st.success("Producto agregado"); st.rerun()
-    
-    with tab3:
-        prods_list = pd.read_sql_query("SELECT * FROM productos ORDER BY nombre ASC", conn)
-        if not prods_list.empty:
-            seleccionado = st.selectbox("Seleccione Producto para editar o eliminar:", prods_list['nombre'].tolist())
-            datos_p = prods_list[prods_list['nombre'] == seleccionado].iloc[0]
-            
-            # FORMULARIO DE EDICIÓN
-            with st.form("form_edit"):
-                nuevo_n = st.text_input("Nombre del Producto", value=datos_p['nombre'])
-                nuevo_p = st.number_input("Precio (₡)", value=float(datos_p['precio']))
-                nuevo_s = st.number_input("Stock Actual", value=int(datos_p['stock']))
-                btn_update = st.form_submit_button("🔄 Actualizar Datos")
-                
-                if btn_update:
-                    c.execute("UPDATE productos SET nombre=?, precio=?, stock=? WHERE id=?", 
-                              (nuevo_n, nuevo_p, nuevo_s, int(datos_p['id'])))
-                    conn.commit(); st.success("¡Producto actualizado!"); st.rerun()
+    st.header("📦 Gestión de Inventario")
+    df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
+    df_ed = st.data_editor(df_inv, column_config={"id": st.column_config.NumberColumn(disabled=True)}, hide_index=True, use_container_width=True)
+    if st.button("💾 Guardar Cambios"):
+        for _, row in df_ed.iterrows(): c.execute("UPDATE productos SET nombre=?, precio=?, stock=? WHERE id=?", (row['nombre'], row['precio'], row['stock'], int(row['id'])))
+        conn.commit(); st.success("Actualizado"); st.rerun()
+    with st.expander("➕ Agregar Nuevo Producto"):
+        with st.form("new_p"):
+            n, p, s = st.text_input("Nombre"), st.number_input("Precio"), st.number_input("Stock")
+            if st.form_submit_button("Añadir"):
+                c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (n,p,s)); conn.commit(); st.rerun()
 
-            st.write("---")
-            # BOTÓN ELIMINAR FUERA DEL FORMULARIO PARA EVITAR CONFLICTOS
-            if st.button("🗑️ ELIMINAR ESTE PRODUCTO PERMANENTEMENTE"):
-                c.execute("DELETE FROM productos WHERE id=?", (int(datos_p['id']),))
-                conn.commit(); st.warning(f"Producto '{seleccionado}' eliminado."); st.rerun()
-        else: st.info("No hay productos.")
+elif choice == "📊 Resumen de Productos":
+    st.header("📊 Resumen de Ventas por Artículo")
+    df_v = pd.read_sql_query("SELECT detalle FROM ventas WHERE reporte_id IS NULL", conn)
+    if not df_v.empty:
+        df_res = obtener_conteo_productos(df_v)
+        st.table(df_res)
+        st.download_button(label="📥 Exportar Resumen a Excel/CSV", data=to_csv(df_res), file_name=f"resumen_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
+    else: st.info("No hay ventas registradas.")
 
-# --- SECCIÓN CUENTAS POR COBRAR ---
 elif choice == "📝 Cuentas por Cobrar":
-    st.header("Cuentas Pendientes")
-    cuentas = pd.read_sql_query("SELECT * FROM ventas WHERE metodo = 'Crédito' ORDER BY id DESC", conn)
-    if not cuentas.empty:
-        resumen = cuentas.groupby('cliente')['total'].sum().reset_index()
-        st.table(resumen)
-        cliente_sel = st.selectbox("Seleccione Cliente para pagar:", resumen['cliente'].tolist())
-        total_deuda = resumen[resumen['cliente'] == cliente_sel]['total'].sum()
-        metodo_pago = st.selectbox("Método de pago:", ["Efectivo", "SINPE Móvil"])
-        if st.button(f"Confirmar Pago de ₡{int(total_deuda)}"):
-            fecha_pago = datetime.now().strftime("%Y-%m-%d %H:%M")
-            c.execute("UPDATE ventas SET metodo = ?, fecha = ? WHERE cliente = ? AND metodo = 'Crédito'", (metodo_pago, f"{fecha_pago} (Pagado)", cliente_sel))
-            conn.commit(); st.success("¡Pagado!"); st.rerun()
-    else: st.info("Sin cuentas pendientes.")
+    st.header("📝 Gestión de Créditos")
+    df_cc = pd.read_sql_query("SELECT cliente, SUM(total) as deuda FROM ventas WHERE metodo = 'Crédito' GROUP BY cliente", conn)
+    if not df_cc.empty:
+        st.dataframe(df_cc, use_container_width=True, hide_index=True)
+        cl_paga = st.selectbox("Cliente:", df_cc['cliente'].tolist())
+        monto = df_cc[df_cc['cliente'] == cl_paga]['deuda'].values[0]
+        metodo_pago_deuda = st.selectbox("Recibir pago por:", ["Efectivo", "SINPE Móvil"])
+        if st.button(f"Saldar Deuda (₡{int(monto)})"):
+            c.execute("UPDATE ventas SET metodo = ?, fecha = ? WHERE cliente = ? AND metodo = 'Crédito'", (metodo_pago_deuda, f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Saldado)", cl_paga))
+            conn.commit(); st.success("Cuenta cancelada"); st.rerun()
+    else: st.info("No hay deudas pendientes.")
 
-# --- SECCIÓN REPORTE ---
-elif choice == "📊 Reporte":
-    st.header("Gestión de Reportes")
-    tab_actual, tab_historial = st.tabs(["📄 Reporte Abierto", "📜 Historial"])
-
-    with tab_actual:
-        df_actual = pd.read_sql_query("SELECT * FROM ventas WHERE reporte_id IS NULL ORDER BY id DESC", conn)
-        if not df_actual.empty:
-            ingresos_caja = df_actual[df_actual['metodo'] != 'Crédito']['total'].sum()
-            st.metric("Total en Caja (Actual)", f"₡{int(ingresos_caja)}")
-            
-            st.subheader("📈 Artículos Vendidos en este Turno")
-            conteo = contar_articulos(df_actual)
-            if conteo:
-                df_c = pd.DataFrame(list(conteo.items()), columns=['Producto', 'Cant']).sort_values(by='Cant', ascending=False)
-                st.table(df_c)
-
-            st.subheader("Detalle de Transacciones")
-            st.dataframe(df_actual[['id', 'fecha', 'total', 'metodo', 'detalle', 'cliente']], use_container_width=True)
-
-            if st.button("🔴 CERRAR REPORTE"):
-                fecha_cierre = datetime.now().strftime("%Y-%m-%d %H:%M")
-                c.execute("INSERT INTO históricos_reportes (fecha_cierre, total_caja) VALUES (?,?)", (fecha_cierre, ingresos_caja))
-                nuevo_id = c.lastrowid
-                c.execute("UPDATE ventas SET reporte_id = ? WHERE reporte_id IS NULL", (nuevo_id,))
-                conn.commit(); st.success(f"Reporte #{nuevo_id} Cerrado"); st.rerun()
-        else: st.info("No hay ventas actuales.")
-
-    with tab_historial:
-        reportes_lista = pd.read_sql_query("SELECT * FROM históricos_reportes ORDER BY id DESC", conn)
-        if not reportes_lista.empty:
-            reportes_lista['info'] = "Rep #" + reportes_lista['id'].astype(str) + " - " + reportes_lista['fecha_cierre']
-            rep_sel = st.selectbox("Seleccione reporte:", reportes_lista['info'].tolist())
-            id_rep = int(rep_sel.split("#")[1].split(" - ")[0])
-            
-            df_hist = pd.read_sql_query("SELECT * FROM ventas WHERE reporte_id = ?", conn, params=(id_rep,))
-            
-            st.subheader(f"📈 Artículos Vendidos en Reporte #{id_rep}")
-            conteo_h = contar_articulos(df_hist)
-            if conteo_h:
-                df_ch = pd.DataFrame(list(conteo_h.items()), columns=['Producto', 'Cant']).sort_values(by='Cant', ascending=False)
-                st.table(df_ch)
-
-            st.dataframe(df_hist[['id', 'fecha', 'total', 'metodo', 'detalle', 'cliente']], use_container_width=True)
-            
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df_hist.to_excel(writer, index=False)
-            st.download_button("📥 Descargar Excel", data=output.getvalue(), file_name=f"Reporte_{id_rep}.xlsx")
-        else: st.write("No hay historial.")
+elif choice == "📋 Reporte de Pagos":
+    st.header("📋 Auditoría de Ventas")
+    df_p = pd.read_sql_query("SELECT id, fecha, total, metodo, detalle, cliente FROM ventas WHERE reporte_id IS NULL", conn)
+    if not df_p.empty:
+        df_p['Eliminar'] = False
+        df_p_ed = st.data_editor(df_p, column_config={"id": st.column_config.NumberColumn(disabled=True), "metodo": st.column_config.SelectboxColumn("Método", options=["Efectivo", "SINPE Móvil", "Crédito"]), "Eliminar": st.column_config.CheckboxColumn("Borrar?", default=False)}, hide_index=True, use_container_width=True)
+        col_r1, col_r2 = st.columns(2)
+        with col_r1:
+            if st.button("💾 Guardar Cambios en Métodos"):
+                for _, row in df_p_ed.iterrows(): c.execute("UPDATE ventas SET metodo = ? WHERE id = ?", (row['metodo'], int(row['id'])))
+                conn.commit(); st.success("Métodos actualizados"); st.rerun()
+        with col_r2:
+            if st.button("🗑️ ELIMINAR SELECCIONADAS"):
+                ventas_a_borrar = df_p_ed[df_p_ed['Eliminar'] == True]
+                for _, v in ventas_a_borrar.iterrows():
+                    det = v['detalle'].split(", ")
+                    for item in det:
+                        if "(" in item:
+                            n_prod = item.split("(")[0]; cant = int(item.split("(")[1].replace(")", ""))
+                            c.execute("UPDATE productos SET stock = stock + ? WHERE nombre = ?", (cant, n_prod))
+                    c.execute("DELETE FROM ventas WHERE id = ?", (int(v['id']),))
+                conn.commit(); st.success("Ventas eliminadas"); st.rerun()
+        st.divider()
+        st.download_button("📥 Descargar XML", data=convertir_a_xml(df_p_ed.drop(columns=['Eliminar'])), file_name="reporte.xml", mime="application/xml")
+        if st.button("🔴 CERRAR CAJA"):
+            tot = df_p_ed[(df_p_ed['metodo']!='Crédito') & (df_p_ed['Eliminar']==False)]['total'].sum()
+            c.execute("INSERT INTO históricos_reportes (fecha_cierre, total_caja) VALUES (?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), tot))
+            c.execute("UPDATE ventas SET reporte_id = (SELECT max(id) FROM históricos_reportes) WHERE reporte_id IS NULL")
+            conn.commit(); st.rerun()
