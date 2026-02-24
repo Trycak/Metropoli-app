@@ -60,7 +60,7 @@ def to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
 # --- MENÚ ---
-st.sidebar.title("🏀 Metropoli POS")
+st.sidebar.title("🏀 Metropoli Cafe")
 menu = ["🛒 Ventas", "📊 Resumen de Productos", "📦 Inventario", "📝 Cuentas por Cobrar", "📋 Reporte de Pagos"]
 choice = st.sidebar.radio("Navegación", menu)
 
@@ -181,3 +181,4 @@ elif choice == "📋 Reporte de Pagos":
             c.execute("UPDATE ventas SET reporte_id = (SELECT max(id) FROM históricos_reportes) WHERE reporte_id IS NULL")
             conn.commit(); st.rerun()
     else: st.info("No hay ventas.")
+
