@@ -43,7 +43,7 @@ st.markdown("""
         background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true");
         background-size: cover;
     }
-
+    
     /* ELIMINAR ESPACIO DEL TÍTULO DE NAVEGACIÓN VACÍO */
     [data-testid="stSidebar"] .stRadio > label {
         display: none !important;
@@ -58,7 +58,7 @@ st.markdown("""
         width: 100% !important;
         border: 1px solid rgba(255,255,255,0.2) !important;
     }
-
+    
     [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label p {
         color: white !important;
         font-weight: bold !important;
@@ -94,26 +94,38 @@ st.markdown("""
         border: 1px solid rgba(255, 255, 255, 0.2) !important;
         border-radius: 10px !important;
     }
-
+    
     [data-testid="stDataEditor"] div, [data-testid="stDataFrame"] div {
         color: white !important;
     }
 
     h1, h2, h3, p, span, label { color: white !important; }
-
-    /* AJUSTE PARA EL LOGO SUPERIOR */
-    [data-testid="stSidebar"] [data-testid="stImage"] {
-        padding-top: 20px !important;
-        padding-bottom: 10px !important;
-    }
     </style>
     """, unsafe_allow_html=True)
 
+# --- FUNCIONES ---
+def obtener_conteo_productos(df):
+    conteo = {}
+    for detalle in df['detalle']:
+        partes = detalle.split(", ")
+        for p in partes:
+            if "(" in p and ")" in p:
+                try:
+                    nombre = p.split("(")[0]; cantidad = int(p.split("(")[1].replace(")", ""))
+                    conteo[nombre] = conteo.get(nombre, 0) + cantidad
+                except: continue
+    return pd.DataFrame(list(conteo.items()), columns=['Producto', 'Cantidad']).sort_values(by='Cantidad', ascending=False) if conteo else pd.DataFrame()
+
+def to_csv(df):
+    return df.to_csv(index=False).encode('utf-8')
+
 # --- BARRA LATERAL (SIDEBAR) ---
-# Insertamos solo el logo
+# Insertamos la imagen del logo
 st.sidebar.image("https://github.com/Trycak/Metropoli-app/blob/main/Logo%20Metropoli.png?raw=true", use_container_width=True)
 
-# Menú de navegación sin título
+# Título de la aplicación
+st.sidebar.markdown("<h1 style='text-align: center; color: white;'>Metropoli Cafe</h1>", unsafe_allow_html=True)
+
 menu = ["🛒 Ventas", "📊 Resumen de Productos", "📦 Inventario", "📝 Cuentas por Cobrar", "📋 Reporte de Pagos"]
 choice = st.sidebar.radio("", menu)
 
@@ -184,4 +196,49 @@ elif choice == "📦 Inventario":
 
 elif choice == "📝 Cuentas por Cobrar":
     st.header("📝 Gestión de Créditos")
-    # ... (Resto del código sin cambios)
+    df_cc = pd.read_sql_query("SELECT cliente, SUM(total) as deuda FROM ventas WHERE metodo = 'Crédito' GROUP BY cliente", conn)
+    if not df_cc.empty:
+        st.dataframe(df_cc, use_container_width=True, hide_index=True)
+        cl_paga = st.selectbox("Cliente:", df_cc['cliente'].tolist())
+        monto = df_cc[df_cc['cliente'] == cl_paga]['deuda'].values[0]
+        metodo_pago_deuda = st.selectbox("Recibir pago por:", ["Efectivo", "SINPE Móvil"])
+        if st.button(f"Saldar Deuda (₡{int(monto)})", use_container_width=True):
+            c.execute("UPDATE ventas SET metodo = ?, fecha = ? WHERE cliente = ? AND metodo = 'Crédito'", (metodo_pago_deuda, f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Saldado)", cl_paga))
+            conn.commit(); st.success("Cuenta cancelada"); st.rerun()
+    else: st.info("No hay deudas pendientes.")
+
+elif choice == "📋 Reporte de Pagos":
+    st.header("📋 Auditoría de Ventas")
+    df_p = pd.read_sql_query("SELECT id, fecha, total, metodo, detalle, cliente FROM ventas WHERE reporte_id IS NULL", conn)
+    if not df_p.empty:
+        df_p['Eliminar'] = False
+        df_p_ed = st.data_editor(df_p, column_config={"id": None, "metodo": st.column_config.SelectboxColumn("Método", options=["Efectivo", "SINPE Móvil", "Crédito"]), "Eliminar": st.column_config.CheckboxColumn("Borrar?", default=False)}, hide_index=True, use_container_width=True)
+        
+        col_r1, col_r2 = st.columns(2)
+        with col_r1:
+            if st.button("💾 Guardar Cambios en Métodos", use_container_width=True):
+                for _, row in df_p_ed.iterrows(): c.execute("UPDATE ventas SET metodo = ? WHERE id = ?", (row['metodo'], int(row['id'])))
+                conn.commit(); st.success("Métodos actualizados"); st.rerun()
+        with col_r2:
+            if st.button("🗑️ ELIMINAR SELECCIONADAS", use_container_width=True):
+                ventas_a_borrar = df_p_ed[df_p_ed['Eliminar'] == True]
+                for _, v in ventas_a_borrar.iterrows():
+                    det = v['detalle'].split(", ")
+                    for item in det:
+                        if "(" in item:
+                            n_prod = item.split("(")[0]; cant = int(item.split("(")[1].replace(")", ""))
+                            c.execute("UPDATE productos SET stock = stock + ? WHERE nombre = ?", (cant, n_prod))
+                    c.execute("DELETE FROM ventas WHERE id = ?", (int(v['id']),))
+                conn.commit(); st.success("Ventas eliminadas"); st.rerun()
+        
+        st.divider()
+        csv_data = df_p_ed.drop(columns=['Eliminar']).to_csv(index=False).encode('utf-8')
+        st.download_button("📥 EXPORTAR REPORTE A CSV", data=csv_data, file_name=f"reporte_ventas_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
+        
+        st.divider()
+        if st.button("🔴 CERRAR CAJA", use_container_width=True):
+            tot = df_p_ed[(df_p_ed['metodo']!='Crédito') & (df_p_ed['Eliminar']==False)]['total'].sum()
+            c.execute("INSERT INTO históricos_reportes (fecha_cierre, total_caja) VALUES (?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), tot))
+            c.execute("UPDATE ventas SET reporte_id = (SELECT max(id) FROM históricos_reportes) WHERE reporte_id IS NULL")
+            conn.commit(); st.rerun()
+    else: st.info("No hay ventas registradas.")
