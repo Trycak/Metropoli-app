@@ -38,54 +38,64 @@ st.markdown("""
         top: 0; left: 0; width: 100%; height: 100%; z-index: -1;
     }
 
-    /* BARRA LATERAL */
+    /* BARRA LATERAL - ELIMINAR SCROLL */
     [data-testid="stSidebar"] {
         background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true");
         background-size: cover;
     }
-    
-    /* ELIMINAR ESPACIO DEL TÍTULO DE NAVEGACIÓN VACÍO */
+
+    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+        padding-top: 0rem !important;
+        gap: 0rem !important;
+    }
+
     [data-testid="stSidebar"] .stRadio > label {
         display: none !important;
     }
 
-    /* BOTONES DE LA BARRA LATERAL */
+    /* BOTONES DE LA BARRA LATERAL COMPACTOS */
     [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label {
         background-color: rgba(255, 255, 255, 0.1) !important;
         border-radius: 10px !important;
-        padding: 20px 15px !important;
-        margin-bottom: 15px !important;
+        padding: 10px 15px !important; 
+        margin-bottom: 6px !important;  
         width: 100% !important;
         border: 1px solid rgba(255,255,255,0.2) !important;
     }
-    
+
     [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label p {
         color: white !important;
         font-weight: bold !important;
-        font-size: 22px !important;
+        font-size: 18px !important;
         text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
     }
 
-    /* BOTONES DE PRODUCTOS */
+    /* LOGO SUPERIOR SUBIDO */
+    [data-testid="stSidebar"] [data-testid="stImage"] {
+        padding-top: 10px !important;
+        padding-bottom: 5px !important;
+        margin-top: -20px !important; 
+    }
+
+    /* BOTONES DE PRODUCTOS (PRECIO ABAJO) */
     div.stButton > button[key^="p_"] {
         background-color: #28a5a9 !important;
         color: white !important;
         border-radius: 12px !important;
-        height: 130px !important;
+        height: 115px !important;
         width: 100% !important;
         font-weight: bold !important;
-        font-size: 20px !important;
+        font-size: 18px !important;
         white-space: pre !important; 
         display: block !important;
-        line-height: 1.4 !important;
+        line-height: 1.3 !important;
     }
 
-    /* BOTONES DE ACCIÓN (#28a5a9) */
+    /* BOTONES DE ACCIÓN */
     div.stButton > button, div.stDownloadButton > button {
         background-color: #28a5a9 !important;
         color: white !important;
         font-weight: bold !important;
-        font-size: 18px !important;
     }
 
     /* TABLAS OSCURAS */
@@ -94,7 +104,7 @@ st.markdown("""
         border: 1px solid rgba(255, 255, 255, 0.2) !important;
         border-radius: 10px !important;
     }
-    
+
     [data-testid="stDataEditor"] div, [data-testid="stDataFrame"] div {
         color: white !important;
     }
@@ -103,7 +113,7 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNCIONES ---
+# --- FUNCIONES (RESTAURADAS) ---
 def obtener_conteo_productos(df):
     conteo = {}
     for detalle in df['detalle']:
@@ -111,21 +121,18 @@ def obtener_conteo_productos(df):
         for p in partes:
             if "(" in p and ")" in p:
                 try:
-                    nombre = p.split("(")[0]; cantidad = int(p.split("(")[1].replace(")", ""))
+                    nombre = p.split("(")[0]
+                    cantidad = int(p.split("(")[1].replace(")", ""))
                     conteo[nombre] = conteo.get(nombre, 0) + cantidad
                 except: continue
-    return pd.DataFrame(list(conteo.items()), columns=['Producto', 'Cantidad']).sort_values(by='Cantidad', ascending=False) if conteo else pd.DataFrame()
+    if not conteo: return pd.DataFrame()
+    return pd.DataFrame(list(conteo.items()), columns=['Producto', 'Cantidad']).sort_values(by='Cantidad', ascending=False)
 
 def to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
-# --- BARRA LATERAL (SIDEBAR) ---
-# Insertamos la imagen del logo
+# --- BARRA LATERAL ---
 st.sidebar.image("https://github.com/Trycak/Metropoli-app/blob/main/Logo%20Metropoli.png?raw=true", use_container_width=True)
-
-# Título de la aplicación
-st.sidebar.markdown("<h1 style='text-align: center; color: white;'>Metropoli Cafe</h1>", unsafe_allow_html=True)
-
 menu = ["🛒 Ventas", "📊 Resumen de Productos", "📦 Inventario", "📝 Cuentas por Cobrar", "📋 Reporte de Pagos"]
 choice = st.sidebar.radio("", menu)
 
@@ -139,12 +146,14 @@ if choice == "🛒 Ventas":
         grid = st.columns(3)
         for i, row in prods.iterrows():
             with grid[i % 3]:
+                # Nombre y precio en líneas separadas
                 texto_final = f"{row['nombre']} ({int(row['stock'])})\n₡{int(row['precio'])}"
                 if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock']<=0):
                     pid = str(row['id'])
                     if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
                     else: st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
                     st.rerun()
+
     with col_cart:
         st.subheader("🛒 Carrito")
         if st.session_state.carrito:
@@ -186,7 +195,8 @@ elif choice == "📦 Inventario":
     df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
     df_ed = st.data_editor(df_inv, column_config={"id": None}, hide_index=True, use_container_width=True)
     if st.button("💾 Guardar Cambios", use_container_width=True):
-        for _, row in df_ed.iterrows(): c.execute("UPDATE productos SET nombre=?, precio=?, stock=? WHERE id=?", (row['nombre'], row['precio'], row['stock'], int(row['id'])))
+        for _, row in df_ed.iterrows(): 
+            c.execute("UPDATE productos SET nombre=?, precio=?, stock=? WHERE id=?", (row['nombre'], row['precio'], row['stock'], int(row['id'])))
         conn.commit(); st.success("Actualizado"); st.rerun()
     with st.expander("➕ Agregar Nuevo Producto"):
         with st.form("new_p"):
@@ -213,7 +223,7 @@ elif choice == "📋 Reporte de Pagos":
     if not df_p.empty:
         df_p['Eliminar'] = False
         df_p_ed = st.data_editor(df_p, column_config={"id": None, "metodo": st.column_config.SelectboxColumn("Método", options=["Efectivo", "SINPE Móvil", "Crédito"]), "Eliminar": st.column_config.CheckboxColumn("Borrar?", default=False)}, hide_index=True, use_container_width=True)
-        
+
         col_r1, col_r2 = st.columns(2)
         with col_r1:
             if st.button("💾 Guardar Cambios en Métodos", use_container_width=True):
@@ -230,11 +240,7 @@ elif choice == "📋 Reporte de Pagos":
                             c.execute("UPDATE productos SET stock = stock + ? WHERE nombre = ?", (cant, n_prod))
                     c.execute("DELETE FROM ventas WHERE id = ?", (int(v['id']),))
                 conn.commit(); st.success("Ventas eliminadas"); st.rerun()
-        
-        st.divider()
-        csv_data = df_p_ed.drop(columns=['Eliminar']).to_csv(index=False).encode('utf-8')
-        st.download_button("📥 EXPORTAR REPORTE A CSV", data=csv_data, file_name=f"reporte_ventas_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
-        
+
         st.divider()
         if st.button("🔴 CERRAR CAJA", use_container_width=True):
             tot = df_p_ed[(df_p_ed['metodo']!='Crédito') & (df_p_ed['Eliminar']==False)]['total'].sum()
