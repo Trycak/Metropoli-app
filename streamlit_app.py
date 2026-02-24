@@ -3,7 +3,6 @@ import sqlite3
 import pandas as pd
 from datetime import datetime
 import io
-import xml.etree.ElementTree as ET
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Metropoli Basket Academy", page_icon="🏀", layout="wide")
@@ -30,7 +29,23 @@ st.markdown("""
         background-color: #134971 !important;
     }
 
-    /* BARRA LATERAL SOLO CON IMAGEN DE FONDO */
+    /* LOGO DE FONDO */
+    .stApp::before {
+        content: "";
+        background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Logo%20Metropoli%20opacidad.png?raw=true");
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+        background-position: center;
+        background-size: 600px;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        z-index: -1;
+    }
+
+    /* BARRA LATERAL */
     [data-testid="stSidebar"] {
         background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true");
         background-size: cover;
@@ -38,73 +53,63 @@ st.markdown("""
         background-repeat: no-repeat;
     }
 
-    /* Eliminamos cualquier capa de color previa en el contenedor interno */
-    [data-testid="stSidebar"] > div:first-child {
-        background-color: transparent !important; 
+    /* BOTONES DE LA BARRA LATERAL - EL DOBLE DE TAMAÑO */
+    [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label {
+        background-color: rgba(255, 255, 255, 0.1) !important;
+        border-radius: 10px !important;
+        padding: 20px 15px !important;
+        margin-bottom: 15px !important;
+        width: 100% !important;
+        border: 1px solid rgba(255,255,255,0.2) !important;
     }
-
-    /* Texto de la barra lateral en blanco con sombra reforzada para legibilidad sin fondo de color */
-    [data-testid="stSidebar"] .stMarkdown p, 
-    [data-testid="stSidebar"] h1, 
-    [data-testid="stSidebar"] h2, 
-    [data-testid="stSidebar"] span,
-    [data-testid="stSidebar"] div[role="radiogroup"] label {
+    
+    [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label p {
         color: white !important;
         font-weight: bold !important;
-        font-size: 18px !important;
-        text-shadow: 2px 2px 8px rgba(0,0,0,1); /* Sombra negra más fuerte para resaltar sobre la foto */
+        font-size: 22px !important;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
     }
 
-    /* Contenedores de contenido */
-    .main .block-container {
-        background-color: rgba(255, 255, 255, 0.05);
-        border-radius: 20px;
-        padding: 2rem;
-    }
-
-    /* Títulos y textos generales en blanco */
-    h1, h2, h3, p, span, label {
-        color: white !important;
-    }
-
-    /* BOTONES DE PRODUCTOS (Blancos con texto azul) */
+    /* BOTONES DE PRODUCTOS CON SALTO DE LÍNEA FORZADO */
     div.stButton > button[key^="p_"] {
-        background-color: #ffffff !important;
-        color: #134971 !important;
+        background-color: #28a5a9 !important;
+        color: white !important;
         border: none !important;
         border-radius: 12px !important;
-        height: 110px !important;
+        height: 130px !important; /* Más alto para que quepan bien las dos líneas */
         width: 100% !important;
         font-weight: bold !important;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.2) !important;
-        transition: transform 0.2s ease !important;
-    }
-    div.stButton > button[key^="p_"]:hover {
-        transform: scale(1.03) !important;
-        background-color: #f0f0f0 !important;
+        font-size: 20px !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3) !important;
+        
+        /* Estas 3 líneas obligan al texto a separarse */
+        white-space: pre !important; 
+        display: block !important;
+        line-height: 1.4 !important;
     }
 
-    /* BOTÓN ELIMINAR (X) CIRCULAR */
-    div[data-testid="column"] button[key^="del_"] {
-        background-color: #ff4b4b !important;
+    /* BOTONES DE ACCIÓN PRINCIPAL (#28a5a9) */
+    div.stButton > button, div.stDownloadButton > button {
+        background-color: #28a5a9 !important;
         color: white !important;
-        border-radius: 50% !important;
-        width: 32px !important;
-        height: 32px !important;
-        display: flex !important;
-        align-items: center !important;
-        justify-content: center !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: bold !important;
+        font-size: 18px !important;
     }
 
-    /* Tablas editables */
-    .stDataEditor {
-        background-color: white !important;
+    /* TABLAS INTEGRADAS AL FONDO */
+    .stDataEditor, .stDataFrame {
+        background-color: #134971 !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
         border-radius: 10px !important;
+    }
+    
+    [data-testid="stDataEditor"] div {
+        color: white !important;
     }
     </style>
     """, unsafe_allow_html=True)
-
-# --- EL RESTO DEL CÓDIGO PERMANECE IGUAL (Funciones y Menú) ---
 
 # --- FUNCIONES ---
 def obtener_conteo_productos(df):
@@ -119,20 +124,11 @@ def obtener_conteo_productos(df):
                 except: continue
     return pd.DataFrame(list(conteo.items()), columns=['Producto', 'Cantidad']).sort_values(by='Cantidad', ascending=False) if conteo else pd.DataFrame()
 
-def convertir_a_xml(df):
-    root = ET.Element("ReporteVentas")
-    for _, row in df.iterrows():
-        venta = ET.SubElement(root, "Venta")
-        for field in df.columns:
-            child = ET.SubElement(venta, field)
-            child.text = str(row[field])
-    return ET.tostring(root, encoding='utf-8', method='xml')
-
 def to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
 # --- MENÚ ---
-st.sidebar.title("🏀 Metropoli Cafe")
+st.sidebar.title("🏀 Metropoli POS")
 menu = ["🛒 Ventas", "📊 Resumen de Productos", "📦 Inventario", "📝 Cuentas por Cobrar", "📋 Reporte de Pagos"]
 choice = st.sidebar.radio("Navegación", menu)
 
@@ -145,11 +141,19 @@ if choice == "🛒 Ventas":
         grid = st.columns(3)
         for i, row in prods.iterrows():
             with grid[i % 3]:
-                if st.button(f"{row['nombre']}\n({int(row['stock'])})\n₡{int(row['precio'])}", key=f"p_{row['id']}", disabled=row['stock']<=0):
+                # Definimos el texto con el salto de línea claro
+                # El formato es: NOMBRE (STOCK)
+                #               PRECIO
+                linea1 = f"{row['nombre']} ({int(row['stock'])})"
+                linea2 = f"₡{int(row['precio'])}"
+                texto_final = f"{linea1}\n{linea2}"
+                
+                if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock']<=0):
                     pid = str(row['id'])
                     if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
                     else: st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
                     st.rerun()
+    
     with col_cart:
         st.subheader("🛒 Carrito")
         if st.session_state.carrito:
@@ -167,7 +171,7 @@ if choice == "🛒 Ventas":
                 clientes_db = pd.read_sql_query("SELECT DISTINCT cliente FROM ventas WHERE metodo = 'Crédito' AND cliente != ''", conn)['cliente'].tolist()
                 opc = st.selectbox("Seleccionar Cliente", ["-- Nuevo --"] + clientes_db)
                 cliente_n = st.text_input("Nombre del Cliente") if opc == "-- Nuevo --" else opc
-            if st.button("✅ FINALIZAR VENTA", type="primary", use_container_width=True):
+            if st.button("✅ FINALIZAR VENTA", use_container_width=True):
                 if metodo == "Crédito" and not cliente_n: st.error("Falta nombre")
                 else:
                     det = ", ".join([f"{v['nombre']}({v['cantidad']})" for v in st.session_state.carrito.values()])
@@ -177,11 +181,12 @@ if choice == "🛒 Ventas":
                     conn.commit(); st.session_state.carrito = {}; st.success("¡Venta Lista!"); st.rerun()
         else: st.info("El carrito está vacío")
 
+# --- LAS DEMÁS SECCIONES SE MANTIENEN IGUAL ---
 elif choice == "📦 Inventario":
     st.header("📦 Gestión de Inventario")
     df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
-    df_ed = st.data_editor(df_inv, column_config={"id": st.column_config.NumberColumn(disabled=True)}, hide_index=True, use_container_width=True)
-    if st.button("💾 Guardar Cambios"):
+    df_ed = st.data_editor(df_inv, column_config={"id": None}, hide_index=True, use_container_width=True)
+    if st.button("💾 Guardar Cambios", use_container_width=True):
         for _, row in df_ed.iterrows(): c.execute("UPDATE productos SET nombre=?, precio=?, stock=? WHERE id=?", (row['nombre'], row['precio'], row['stock'], int(row['id'])))
         conn.commit(); st.success("Actualizado"); st.rerun()
     with st.expander("➕ Agregar Nuevo Producto"):
@@ -196,7 +201,7 @@ elif choice == "📊 Resumen de Productos":
     if not df_v.empty:
         df_res = obtener_conteo_productos(df_v)
         st.table(df_res)
-        st.download_button(label="📥 Exportar Resumen a Excel/CSV", data=to_csv(df_res), file_name=f"resumen_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv")
+        st.download_button(label="📥 EXPORTAR RESUMEN A CSV", data=to_csv(df_res), file_name=f"resumen_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
     else: st.info("No hay ventas registradas.")
 
 elif choice == "📝 Cuentas por Cobrar":
@@ -207,7 +212,7 @@ elif choice == "📝 Cuentas por Cobrar":
         cl_paga = st.selectbox("Cliente:", df_cc['cliente'].tolist())
         monto = df_cc[df_cc['cliente'] == cl_paga]['deuda'].values[0]
         metodo_pago_deuda = st.selectbox("Recibir pago por:", ["Efectivo", "SINPE Móvil"])
-        if st.button(f"Saldar Deuda (₡{int(monto)})"):
+        if st.button(f"Saldar Deuda (₡{int(monto)})", use_container_width=True):
             c.execute("UPDATE ventas SET metodo = ?, fecha = ? WHERE cliente = ? AND metodo = 'Crédito'", (metodo_pago_deuda, f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Saldado)", cl_paga))
             conn.commit(); st.success("Cuenta cancelada"); st.rerun()
     else: st.info("No hay deudas pendientes.")
@@ -217,14 +222,15 @@ elif choice == "📋 Reporte de Pagos":
     df_p = pd.read_sql_query("SELECT id, fecha, total, metodo, detalle, cliente FROM ventas WHERE reporte_id IS NULL", conn)
     if not df_p.empty:
         df_p['Eliminar'] = False
-        df_p_ed = st.data_editor(df_p, column_config={"id": st.column_config.NumberColumn(disabled=True), "metodo": st.column_config.SelectboxColumn("Método", options=["Efectivo", "SINPE Móvil", "Crédito"]), "Eliminar": st.column_config.CheckboxColumn("Borrar?", default=False)}, hide_index=True, use_container_width=True)
+        df_p_ed = st.data_editor(df_p, column_config={"id": None, "metodo": st.column_config.SelectboxColumn("Método", options=["Efectivo", "SINPE Móvil", "Crédito"]), "Eliminar": st.column_config.CheckboxColumn("Borrar?", default=False)}, hide_index=True, use_container_width=True)
+        
         col_r1, col_r2 = st.columns(2)
         with col_r1:
-            if st.button("💾 Guardar Cambios en Métodos"):
+            if st.button("💾 Guardar Cambios en Métodos", use_container_width=True):
                 for _, row in df_p_ed.iterrows(): c.execute("UPDATE ventas SET metodo = ? WHERE id = ?", (row['metodo'], int(row['id'])))
                 conn.commit(); st.success("Métodos actualizados"); st.rerun()
         with col_r2:
-            if st.button("🗑️ ELIMINAR SELECCIONADAS"):
+            if st.button("🗑️ ELIMINAR SELECCIONADAS", use_container_width=True):
                 ventas_a_borrar = df_p_ed[df_p_ed['Eliminar'] == True]
                 for _, v in ventas_a_borrar.iterrows():
                     det = v['detalle'].split(", ")
@@ -234,11 +240,16 @@ elif choice == "📋 Reporte de Pagos":
                             c.execute("UPDATE productos SET stock = stock + ? WHERE nombre = ?", (cant, n_prod))
                     c.execute("DELETE FROM ventas WHERE id = ?", (int(v['id']),))
                 conn.commit(); st.success("Ventas eliminadas"); st.rerun()
+        
         st.divider()
-        st.download_button("📥 Descargar XML", data=convertir_a_xml(df_p_ed.drop(columns=['Eliminar'])), file_name="reporte.xml", mime="application/xml")
-        if st.button("🔴 CERRAR CAJA"):
+        csv_data = df_p_ed.drop(columns=['Eliminar']).to_csv(index=False).encode('utf-8')
+        st.download_button("📥 EXPORTAR REPORTE A CSV", data=csv_data, file_name=f"reporte_ventas_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
+        
+        st.divider()
+        if st.button("🔴 CERRAR CAJA", use_container_width=True):
             tot = df_p_ed[(df_p_ed['metodo']!='Crédito') & (df_p_ed['Eliminar']==False)]['total'].sum()
             c.execute("INSERT INTO históricos_reportes (fecha_cierre, total_caja) VALUES (?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), tot))
             c.execute("UPDATE ventas SET reporte_id = (SELECT max(id) FROM históricos_reportes) WHERE reporte_id IS NULL")
             conn.commit(); st.rerun()
-
+    else: 
+        st.info("No hay ventas registradas.")
