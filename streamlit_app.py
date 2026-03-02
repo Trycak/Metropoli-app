@@ -279,3 +279,4 @@ elif choice == "📋 Reporte de Pagos":
             c.execute("UPDATE ventas SET reporte_id = (SELECT max(id) FROM históricos_reportes) WHERE reporte_id IS NULL")
             conn.commit(); st.rerun()
     else: st.info("No hay ventas registradas.")
+
