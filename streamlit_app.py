@@ -43,7 +43,7 @@ st.markdown("""
         background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true");
         background-size: cover;
     }
-    
+
     [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
         padding-top: 0rem !important;
         gap: 0rem !important;
@@ -62,7 +62,7 @@ st.markdown("""
         width: 100% !important;
         border: 1px solid rgba(255,255,255,0.2) !important;
     }
-    
+
     [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label p {
         color: white !important;
         font-weight: bold !important;
@@ -97,7 +97,7 @@ st.markdown("""
         border: 1px solid rgba(255, 255, 255, 0.2) !important;
         border-radius: 10px !important;
     }
-    
+
     [data-testid="stDataEditor"] div, [data-testid="stDataFrame"] div {
         color: white !important;
     }
@@ -146,7 +146,7 @@ if choice == "🛒 Ventas":
                     if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
                     else: st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
                     st.rerun()
-    
+
     with col_cart:
         st.subheader("🛒 Carrito")
         if st.session_state.carrito:
@@ -189,7 +189,7 @@ elif choice == "📦 Inventario":
     st.header("📦 Inventario")
     df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
     df_inv['Eliminar'] = False
-    
+
     _, mid, _ = st.columns([1, 5, 1])
     with mid:
         df_ed = st.data_editor(df_inv, column_config={
@@ -199,7 +199,7 @@ elif choice == "📦 Inventario":
             "stock": st.column_config.NumberColumn("Stock", width="small"),
             "Eliminar": st.column_config.CheckboxColumn("Seleccionar", default=False)
         }, hide_index=True, use_container_width=True)
-        
+
         c1, c2, c3 = st.columns([1, 1, 1])
         with c1:
             if st.button("💾 Guardar Cambios", use_container_width=True):
@@ -215,7 +215,7 @@ elif choice == "📦 Inventario":
                     for _, row in seleccionados.iterrows():
                         c.execute("DELETE FROM productos WHERE id = ?", (int(row['id']),))
                     conn.commit(); st.success(f"{len(seleccionados)} producto(s) eliminado(s)"); st.rerun()
-        
+
         st.divider()
         with st.expander("➕ Agregar Nuevo Producto"):
             with st.form("new_p"):
@@ -252,7 +252,7 @@ elif choice == "📋 Reporte de Pagos":
             "detalle": st.column_config.TextColumn("Detalle", width="large"),
             "Eliminar": st.column_config.CheckboxColumn("Borrar?", default=False)
         }, hide_index=True, use_container_width=True)
-        
+
         col_r1, col_r2 = st.columns(2)
         with col_r1:
             if st.button("💾 Guardar Cambios en Métodos", use_container_width=True):
@@ -269,14 +269,13 @@ elif choice == "📋 Reporte de Pagos":
                             c.execute("UPDATE productos SET stock = stock + ? WHERE nombre = ?", (cant, n_prod))
                     c.execute("DELETE FROM ventas WHERE id = ?", (int(v['id']),))
                 conn.commit(); st.success("Ventas eliminadas"); st.rerun()
-        
+
         st.divider()
         st.download_button(label="📥 EXPORTAR REPORTE CSV", data=to_csv(df_p_ed.drop(columns=['Eliminar'])), file_name=f"reporte_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
-        
+
         if st.button("🔴 CERRAR CAJA", use_container_width=True):
             tot = df_p_ed[(df_p_ed['metodo']!='Crédito') & (df_p_ed['Eliminar']==False)]['total'].sum()
             c.execute("INSERT INTO históricos_reportes (fecha_cierre, total_caja) VALUES (?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), tot))
             c.execute("UPDATE ventas SET reporte_id = (SELECT max(id) FROM históricos_reportes) WHERE reporte_id IS NULL")
             conn.commit(); st.rerun()
     else: st.info("No hay ventas registradas.")
-
