@@ -70,10 +70,10 @@ def obtener_conteo_productos(df):
 def to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
-# --- MENÚ LATERAL (NUEVO ORDEN SOLICITADO) ---
+# --- MENÚ LATERAL ---
 st.sidebar.image("https://github.com/Trycak/Metropoli-app/blob/main/Logo%20Metropoli.png?raw=true", use_container_width=True)
 menu = ["🛒 Ventas", "📦 Inventario", "📊 Productos Vendidos", "📝 Cuentas por Cobrar", "📋 Reportes"]
-choice = st.sidebar.radio("", menu)
+choice = st.sidebar.radio("Navegación", menu, label_visibility="collapsed")
 
 # --- SECCIONES ---
 
@@ -115,20 +115,43 @@ if choice == "🛒 Ventas":
 elif choice == "📦 Inventario":
     st.header("📦 Gestión de Inventario")
     df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
+    
+    # Tabla editable
     df_ed = st.data_editor(df_inv, column_config={"id": None}, hide_index=True, use_container_width=True)
-    if st.button("💾 Guardar Cambios"):
+    
+    if st.button("💾 Guardar Cambios en la Tabla"):
         for _, row in df_ed.iterrows():
             c.execute("UPDATE productos SET nombre=?, precio=?, stock=? WHERE id=?", (row['nombre'], row['precio'], row['stock'], int(row['id'])))
         conn.commit(); st.success("Inventario actualizado"); st.rerun()
     
+    st.divider()
+    
+    # --- SUBSECCIÓN: AGREGAR ---
     with st.expander("➕ Agregar Nuevo Producto"):
         with st.form("nuevo"):
-            n = st.text_input("Nombre")
+            n = st.text_input("Nombre del Producto")
             p = st.number_input("Precio", min_value=0)
             s = st.number_input("Stock Inicial", min_value=0)
-            if st.form_submit_button("Añadir"):
-                c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (n, p, s))
-                conn.commit(); st.rerun()
+            if st.form_submit_button("Añadir al Sistema"):
+                if n:
+                    c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (n, p, s))
+                    conn.commit(); st.success(f"{n} añadido"); st.rerun()
+                else: st.error("El nombre no puede estar vacío")
+
+    # --- SUBSECCIÓN: ELIMINAR (NUEVA FUNCIÓN) ---
+    with st.expander("🗑️ Eliminar Producto del Sistema"):
+        if not df_inv.empty:
+            productos_nombres = df_inv['nombre'].tolist()
+            prod_eliminar = st.selectbox("Selecciona el producto que deseas BORRAR por completo:", productos_nombres)
+            
+            st.warning(f"¡Atención! Vas a eliminar '{prod_eliminar}'. Esta acción no se puede deshacer.")
+            if st.button("❗ ELIMINAR AHORA", use_container_width=True):
+                c.execute("DELETE FROM productos WHERE nombre = ?", (prod_eliminar,))
+                conn.commit()
+                st.success(f"Producto '{prod_eliminar}' eliminado correctamente.")
+                st.rerun()
+        else:
+            st.info("No hay productos para eliminar.")
 
 elif choice == "📊 Productos Vendidos":
     st.header("📊 Productos Vendidos")
