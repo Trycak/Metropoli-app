@@ -2,57 +2,111 @@ import streamlit as st
 import sqlite3
 import pandas as pd
 from datetime import datetime
-import os
+import io
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Metropoli Cafe", page_icon="🏀", layout="wide")
 
-# 2. Conexión a Base de Datos (AJUSTADA PARA RAILWAY)
+# 2. Conexión a Base de Datos
 def conectar_db():
-    # Esta es la ruta del Volumen que configuramos (/app/data)
-    ruta_volumen = '/app/data/metropoli.db'
-    
-    # Verificamos si la carpeta del volumen existe (estamos en Railway)
-    if os.path.exists('/app/data'):
-        ruta = ruta_volumen
-    else:
-        # Si no existe, estamos en Replit o local, usamos la ruta de siempre
-        ruta = 'metropoli.db'
-        
-    conn = sqlite3.connect(ruta, check_same_thread=False)
+    conn = sqlite3.connect('metropoli.db', check_same_thread=False)
     return conn
 
 conn = conectar_db()
 c = conn.cursor()
 
-# Asegurar que las tablas existan
+# Asegurar tablas
 c.execute('CREATE TABLE IF NOT EXISTS productos (id INTEGER PRIMARY KEY, nombre TEXT, precio REAL, stock INTEGER)')
 c.execute('CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, fecha TEXT, total REAL, metodo TEXT, detalle TEXT, cliente TEXT, reporte_id INTEGER)')
 c.execute('CREATE TABLE IF NOT EXISTS históricos_reportes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_caja REAL)')
 conn.commit()
 
-# --- ESTILOS VISUALES ---
+# --- ESTILOS VISUALES PERSONALIZADOS ---
 st.markdown("""
     <style>
     .stApp { background-color: #134971 !important; }
+
+    /* LOGO DE FONDO GENERAL */
     .stApp::before {
         content: "";
         background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Logo%20Metropoli%20opacidad.png?raw=true");
-        background-repeat: no-repeat; background-attachment: fixed; background-position: center; background-size: 600px;
-        position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+        background-position: center;
+        background-size: 600px;
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%; z-index: -1;
     }
-    [data-testid="stSidebar"] { background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true"); background-size: cover; }
+
+    /* BARRA LATERAL - ELIMINAR SCROLL */
+    [data-testid="stSidebar"] {
+        background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true");
+        background-size: cover;
+    }
+    
+    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+        padding-top: 0rem !important;
+        gap: 0rem !important;
+    }
+
+    [data-testid="stSidebar"] .stRadio > label {
+        display: none !important;
+    }
+
+    /* BOTONES DE LA BARRA LATERAL COMPACTOS */
     [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label {
         background-color: rgba(255, 255, 255, 0.1) !important;
-        border-radius: 10px !important; padding: 10px 15px !important; margin-bottom: 6px !important; width: 100% !important;
+        border-radius: 10px !important;
+        padding: 10px 15px !important; 
+        margin-bottom: 6px !important;  
+        width: 100% !important;
+        border: 1px solid rgba(255,255,255,0.2) !important;
     }
-    [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label p { color: white !important; font-weight: bold !important; font-size: 18px !important; }
-    div.stButton > button[key^="p_"] { background-color: #28a5a9 !important; color: white !important; border-radius: 12px !important; height: 115px !important; width: 100% !important; font-size: 18px !important; }
+    
+    [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label p {
+        color: white !important;
+        font-weight: bold !important;
+        font-size: 18px !important;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+    }
+
+    /* LOGO SUPERIOR SUBIDO */
+    [data-testid="stSidebar"] [data-testid="stImage"] {
+        padding-top: 10px !important;
+        padding-bottom: 5px !important;
+        margin-top: -20px !important; 
+    }
+
+    /* BOTONES DE PRODUCTOS */
+    div.stButton > button[key^="p_"] {
+        background-color: #28a5a9 !important;
+        color: white !important;
+        border-radius: 12px !important;
+        height: 115px !important;
+        width: 100% !important;
+        font-weight: bold !important;
+        font-size: 18px !important;
+        white-space: pre !important; 
+        display: block !important;
+        line-height: 1.3 !important;
+    }
+
+    /* TABLAS OSCURAS */
+    .stDataEditor, .stDataFrame {
+        background-color: #134971 !important;
+        border: 1px solid rgba(255, 255, 255, 0.2) !important;
+        border-radius: 10px !important;
+    }
+    
+    [data-testid="stDataEditor"] div, [data-testid="stDataFrame"] div {
+        color: white !important;
+    }
+
     h1, h2, h3, p, span, label { color: white !important; text-align: center; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNCIONES DE APOYO ---
+# --- FUNCIONES ---
 def obtener_conteo_productos(df):
     conteo = {}
     for detalle in df['detalle']:
@@ -70,13 +124,13 @@ def obtener_conteo_productos(df):
 def to_csv(df):
     return df.to_csv(index=False).encode('utf-8')
 
-# --- MENÚ LATERAL ---
+# --- BARRA LATERAL ---
 st.sidebar.image("https://github.com/Trycak/Metropoli-app/blob/main/Logo%20Metropoli.png?raw=true", use_container_width=True)
+# NUEVO ORDEN Y NOMBRES SOLICITADOS
 menu = ["🛒 Ventas", "📦 Inventario", "📊 Productos Vendidos", "📝 Cuentas por Cobrar", "📋 Reportes"]
-choice = st.sidebar.radio("Navegación", menu, label_visibility="collapsed")
+choice = st.sidebar.radio("", menu)
 
 # --- SECCIONES ---
-
 if choice == "🛒 Ventas":
     if 'carrito' not in st.session_state: st.session_state.carrito = {}
     col_prods, col_cart = st.columns([2, 1])
@@ -86,8 +140,8 @@ if choice == "🛒 Ventas":
         grid = st.columns(3)
         for i, row in prods.iterrows():
             with grid[i % 3]:
-                texto_btn = f"{row['nombre']} ({int(row['stock'])})\n₡{int(row['precio'])}"
-                if st.button(texto_btn, key=f"p_{row['id']}", disabled=row['stock']<=0):
+                texto_final = f"{row['nombre']} ({int(row['stock'])})\n₡{int(row['precio'])}"
+                if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock']<=0):
                     pid = str(row['id'])
                     if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
                     else: st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
@@ -101,78 +155,126 @@ if choice == "🛒 Ventas":
                 sub = item['precio'] * item['cantidad']; total_v += sub
                 c1, c2 = st.columns([5, 1])
                 c1.write(f"**{item['nombre']} x{item['cantidad']}** (₡{int(sub)})")
-                if c2.button("X", key=f"del_{pid}"): del st.session_state.carrito[pid]; st.rerun()
+                if c2.button("X", key=f"del_{pid}"):
+                    del st.session_state.carrito[pid]; st.rerun()
             st.divider()
             metodo = st.selectbox("Forma de Pago", ["Efectivo", "SINPE Móvil", "Crédito"])
+            cliente_n = ""
+            if metodo == "Crédito":
+                clientes_db = pd.read_sql_query("SELECT DISTINCT cliente FROM ventas WHERE metodo = 'Crédito' AND cliente != ''", conn)['cliente'].tolist()
+                opc = st.selectbox("Seleccionar Cliente", ["-- Nuevo --"] + clientes_db)
+                cliente_n = st.text_input("Nombre del Cliente") if opc == "-- Nuevo --" else opc
             if st.button("✅ FINALIZAR VENTA", use_container_width=True):
-                det = ", ".join([f"{v['nombre']}({v['cantidad']})" for v in st.session_state.carrito.values()])
-                c.execute("INSERT INTO ventas (fecha, total, metodo, detalle) VALUES (?,?,?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), total_v, metodo, det))
-                for pid, item in st.session_state.carrito.items():
-                    c.execute("UPDATE productos SET stock = stock - ? WHERE id = ?", (item['cantidad'], int(pid)))
-                conn.commit(); st.session_state.carrito = {}; st.success("¡Venta Lista!"); st.rerun()
-        else: st.info("Carrito vacío")
+                if metodo == "Crédito" and not cliente_n: st.error("Falta nombre")
+                else:
+                    det = ", ".join([f"{v['nombre']}({v['cantidad']})" for v in st.session_state.carrito.values()])
+                    c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente) VALUES (?,?,?,?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), total_v, metodo, det, cliente_n))
+                    for pid, item in st.session_state.carrito.items():
+                        c.execute("UPDATE productos SET stock = stock - ? WHERE id = ?", (item['cantidad'], int(pid)))
+                    conn.commit(); st.session_state.carrito = {}; st.success("¡Venta Lista!"); st.rerun()
+        else: st.info("El carrito está vacío")
 
 elif choice == "📦 Inventario":
-    st.header("📦 Gestión de Inventario")
+    st.header("📦 Inventario")
     df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
-    
-    # Tabla editable
-    df_ed = st.data_editor(df_inv, column_config={"id": None}, hide_index=True, use_container_width=True)
-    
-    if st.button("💾 Guardar Cambios en la Tabla"):
-        for _, row in df_ed.iterrows():
-            c.execute("UPDATE productos SET nombre=?, precio=?, stock=? WHERE id=?", (row['nombre'], row['precio'], row['stock'], int(row['id'])))
-        conn.commit(); st.success("Inventario actualizado"); st.rerun()
-    
-    st.divider()
-    
-    # --- SUBSECCIÓN: AGREGAR ---
-    with st.expander("➕ Agregar Nuevo Producto"):
-        with st.form("nuevo"):
-            n = st.text_input("Nombre del Producto")
-            p = st.number_input("Precio", min_value=0)
-            s = st.number_input("Stock Inicial", min_value=0)
-            if st.form_submit_button("Añadir al Sistema"):
-                if n:
-                    c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (n, p, s))
-                    conn.commit(); st.success(f"{n} añadido"); st.rerun()
-                else: st.error("El nombre no puede estar vacío")
-
-    # --- SUBSECCIÓN: ELIMINAR (NUEVA FUNCIÓN) ---
-    with st.expander("🗑️ Eliminar Producto del Sistema"):
-        if not df_inv.empty:
-            productos_nombres = df_inv['nombre'].tolist()
-            prod_eliminar = st.selectbox("Selecciona el producto que deseas BORRAR por completo:", productos_nombres)
-            
-            st.warning(f"¡Atención! Vas a eliminar '{prod_eliminar}'. Esta acción no se puede deshacer.")
-            if st.button("❗ ELIMINAR AHORA", use_container_width=True):
-                c.execute("DELETE FROM productos WHERE nombre = ?", (prod_eliminar,))
-                conn.commit()
-                st.success(f"Producto '{prod_eliminar}' eliminado correctamente.")
-                st.rerun()
-        else:
-            st.info("No hay productos para eliminar.")
+    df_inv['Eliminar'] = False
+    _, mid, _ = st.columns([1, 5, 1])
+    with mid:
+        df_ed = st.data_editor(df_inv, column_config={
+            "id": None, 
+            "nombre": st.column_config.TextColumn("Producto", width="medium"),
+            "precio": st.column_config.NumberColumn("Precio", width="small", format="₡%d"),
+            "stock": st.column_config.NumberColumn("Stock", width="small"),
+            "Eliminar": st.column_config.CheckboxColumn("Seleccionar", default=False)
+        }, hide_index=True, use_container_width=True)
+        
+        c1, c2, c3 = st.columns([1, 1, 1])
+        with c1:
+            if st.button("💾 Guardar Cambios", use_container_width=True):
+                for _, row in df_ed.iterrows(): 
+                    c.execute("UPDATE productos SET nombre=?, precio=?, stock=? WHERE id=?", (row['nombre'], row['precio'], row['stock'], int(row['id'])))
+                conn.commit(); st.success("Actualizado"); st.rerun()
+        with c2:
+            st.download_button(label="📥 EXPORTAR CSV", data=to_csv(df_inv.drop(columns=['Eliminar'])), file_name=f"inventario_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
+        with c3:
+            if st.button("🗑️ ELIMINAR SELECCIONADOS", use_container_width=True):
+                seleccionados = df_ed[df_ed['Eliminar'] == True]
+                if not seleccionados.empty:
+                    for _, row in seleccionados.iterrows():
+                        c.execute("DELETE FROM productos WHERE id = ?", (int(row['id']),))
+                    conn.commit(); st.success(f"{len(seleccionados)} producto(s) eliminado(s)"); st.rerun()
+        
+        st.divider()
+        with st.expander("➕ Agregar Nuevo Producto"):
+            with st.form("new_p"):
+                n, p, s = st.text_input("Nombre"), st.number_input("Precio"), st.number_input("Stock")
+                if st.form_submit_button("Añadir"):
+                    c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (n,p,s)); conn.commit(); st.rerun()
 
 elif choice == "📊 Productos Vendidos":
-    st.header("📊 Productos Vendidos")
+    st.header("📊 Resumen de Productos Vendidos")
     df_v = pd.read_sql_query("SELECT detalle FROM ventas WHERE reporte_id IS NULL", conn)
     if not df_v.empty:
         df_res = obtener_conteo_productos(df_v)
-        st.dataframe(df_res, hide_index=True, use_container_width=True)
-    else: st.info("No hay ventas en este periodo.")
+        _, mid, _ = st.columns([1, 2, 1])
+        with mid:
+            st.dataframe(df_res, hide_index=True, use_container_width=True)
+            st.download_button(label="📥 EXPORTAR RESUMEN", data=to_csv(df_res), file_name=f"resumen_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
+    else: st.info("No hay ventas registradas.")
 
 elif choice == "📝 Cuentas por Cobrar":
-    st.header("📝 Cuentas por Cobrar")
-    st.info("Función en desarrollo para créditos de clientes.")
+    st.header("📝 Gestión de Créditos")
+    df_cc = pd.read_sql_query("SELECT cliente, SUM(total) as deuda FROM ventas WHERE metodo = 'Crédito' GROUP BY cliente", conn)
+    if not df_cc.empty:
+        _, mid, _ = st.columns([1, 2, 1])
+        with mid:
+            st.dataframe(df_cc, hide_index=True, use_container_width=True,
+                         column_config={"cliente": "Cliente", "deuda": st.column_config.NumberColumn("Deuda", format="₡%d")})
+            cl_paga = st.selectbox("Cliente:", df_cc['cliente'].tolist())
+            monto = df_cc[df_cc['cliente'] == cl_paga]['deuda'].values[0]
+            metodo_pago_deuda = st.selectbox("Recibir pago por:", ["Efectivo", "SINPE Móvil"])
+            if st.button(f"Saldar Deuda (₡{int(monto)})", use_container_width=True):
+                c.execute("UPDATE ventas SET metodo = ?, fecha = ? WHERE cliente = ? AND metodo = 'Crédito'", (metodo_pago_deuda, f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Saldado)", cl_paga))
+                conn.commit(); st.success("Cuenta cancelada"); st.rerun()
+    else: st.info("No hay deudas pendientes.")
 
 elif choice == "📋 Reportes":
-    st.header("📋 Reportes de Ventas")
-    df_p = pd.read_sql_query("SELECT id, fecha, total, metodo, detalle FROM ventas WHERE reporte_id IS NULL", conn)
+    st.header("📋 Ventas")
+    df_p = pd.read_sql_query("SELECT id, fecha, total, metodo, detalle, cliente FROM ventas WHERE reporte_id IS NULL", conn)
     if not df_p.empty:
-        st.dataframe(df_p, hide_index=True, use_container_width=True)
-        if st.button("🔴 CERRAR CAJA"):
-            total_caja = df_p['total'].sum()
-            c.execute("INSERT INTO históricos_reportes (fecha_cierre, total_caja) VALUES (?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), total_caja))
+        df_p['Eliminar'] = False
+        df_p_ed = st.data_editor(df_p, column_config={
+            "id": None, 
+            "fecha": st.column_config.TextColumn("Fecha", width="small"),
+            "total": st.column_config.NumberColumn("Total", format="₡%d", width="small"),
+            "metodo": st.column_config.SelectboxColumn("Método", options=["Efectivo", "SINPE Móvil", "Crédito"], width="small"),
+            "detalle": st.column_config.TextColumn("Detalle", width="large"),
+            "Eliminar": st.column_config.CheckboxColumn("Borrar?", default=False)
+        }, hide_index=True, use_container_width=True)
+        
+        col_r1, col_r2 = st.columns(2)
+        with col_r1:
+            if st.button("💾 Guardar Cambios en Métodos", use_container_width=True):
+                for _, row in df_p_ed.iterrows(): c.execute("UPDATE ventas SET metodo = ? WHERE id = ?", (row['metodo'], int(row['id'])))
+                conn.commit(); st.success("Métodos actualizados"); st.rerun()
+        with col_r2:
+            if st.button("🗑️ ELIMINAR SELECCIONADAS", use_container_width=True):
+                ventas_a_borrar = df_p_ed[df_p_ed['Eliminar'] == True]
+                for _, v in ventas_a_borrar.iterrows():
+                    det = v['detalle'].split(", ")
+                    for item in det:
+                        if "(" in item:
+                            n_prod = item.split("(")[0]; cant = int(item.split("(")[1].replace(")", ""))
+                            c.execute("UPDATE productos SET stock = stock + ? WHERE nombre = ?", (cant, n_prod))
+                    c.execute("DELETE FROM ventas WHERE id = ?", (int(v['id']),))
+                conn.commit(); st.success("Ventas eliminadas"); st.rerun()
+        
+        st.divider()
+        st.download_button(label="📥 EXPORTAR REPORTE CSV", data=to_csv(df_p_ed.drop(columns=['Eliminar'])), file_name=f"reporte_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
+        
+        if st.button("🔴 CERRAR CAJA", use_container_width=True):
+            tot = df_p_ed[(df_p_ed['metodo']!='Crédito') & (df_p_ed['Eliminar']==False)]['total'].sum()
+            c.execute("INSERT INTO históricos_reportes (fecha_cierre, total_caja) VALUES (?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), tot))
             c.execute("UPDATE ventas SET reporte_id = (SELECT max(id) FROM históricos_reportes) WHERE reporte_id IS NULL")
-            conn.commit(); st.success(f"Caja cerrada con ₡{int(total_caja)}"); st.rerun()
-    else: st.info("No hay ventas pendientes de cierre.")
+            conn.commit(); st.rerun()
+    else: st.info("No hay ventas registradas.")
