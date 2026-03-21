@@ -8,18 +8,13 @@ import os
 # 1. Configuración de la página
 st.set_page_config(page_title="Metropoli Cafe", page_icon="🏀", layout="wide")
 
-# 2. Conexión a Base de Datos (MODIFICADA PARA RAILWAY)
+# 2. Conexión a Base de Datos (AJUSTADA PARA RAILWAY)
 def conectar_db():
-    # Esta es la ruta del Volumen que configuramos en Railway
     ruta_volumen = '/app/data/metropoli.db'
-    
-    # Si la carpeta del volumen existe, usamos esa ruta (estamos en la nube)
     if os.path.exists('/app/data'):
         ruta = ruta_volumen
     else:
-        # Si no existe, usamos la ruta local (estamos en Replit o PC)
         ruta = 'metropoli.db'
-        
     conn = sqlite3.connect(ruta, check_same_thread=False)
     return conn
 
@@ -36,83 +31,34 @@ conn.commit()
 st.markdown("""
     <style>
     .stApp { background-color: #134971 !important; }
-
-    /* LOGO DE FONDO GENERAL */
     .stApp::before {
         content: "";
         background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Logo%20Metropoli%20opacidad.png?raw=true");
-        background-repeat: no-repeat;
-        background-attachment: fixed;
-        background-position: center;
-        background-size: 600px;
-        position: fixed;
-        top: 0; left: 0; width: 100%; height: 100%; z-index: -1;
+        background-repeat: no-repeat; background-attachment: fixed; background-position: center; background-size: 600px;
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1;
     }
-
-    /* BARRA LATERAL - ELIMINAR SCROLL */
     [data-testid="stSidebar"] {
         background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true");
         background-size: cover;
     }
-    
-    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
-        padding-top: 0rem !important;
-        gap: 0rem !important;
-    }
-
-    [data-testid="stSidebar"] .stRadio > label {
-        display: none !important;
-    }
-
-    /* BOTONES DE LA BARRA LATERAL COMPACTOS */
+    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] { padding-top: 0rem !important; gap: 0rem !important; }
+    [data-testid="stSidebar"] .stRadio > label { display: none !important; }
     [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label {
         background-color: rgba(255, 255, 255, 0.1) !important;
-        border-radius: 10px !important;
-        padding: 10px 15px !important; 
-        margin-bottom: 6px !important;  
-        width: 100% !important;
+        border-radius: 10px !important; padding: 10px 15px !important; 
+        margin-bottom: 6px !important; width: 100% !important;
         border: 1px solid rgba(255,255,255,0.2) !important;
     }
-    
     [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label p {
-        color: white !important;
-        font-weight: bold !important;
-        font-size: 18px !important;
+        color: white !important; font-weight: bold !important; font-size: 18px !important;
         text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
     }
-
-    /* LOGO SUPERIOR SUBIDO */
-    [data-testid="stSidebar"] [data-testid="stImage"] {
-        padding-top: 10px !important;
-        padding-bottom: 5px !important;
-        margin-top: -20px !important; 
-    }
-
-    /* BOTONES DE PRODUCTOS */
+    [data-testid="stSidebar"] [data-testid="stImage"] { padding-top: 10px !important; margin-top: -20px !important; }
     div.stButton > button[key^="p_"] {
-        background-color: #28a5a9 !important;
-        color: white !important;
-        border-radius: 12px !important;
-        height: 115px !important;
-        width: 100% !important;
-        font-weight: bold !important;
-        font-size: 18px !important;
-        white-space: pre !important; 
-        display: block !important;
-        line-height: 1.3 !important;
+        background-color: #28a5a9 !important; color: white !important; border-radius: 12px !important;
+        height: 115px !important; width: 100% !important; font-weight: bold !important; font-size: 18px !important;
     }
-
-    /* TABLAS OSCURAS */
-    .stDataEditor, .stDataFrame {
-        background-color: #134971 !important;
-        border: 1px solid rgba(255, 255, 255, 0.2) !important;
-        border-radius: 10px !important;
-    }
-    
-    [data-testid="stDataEditor"] div, [data-testid="stDataFrame"] div {
-        color: white !important;
-    }
-
+    .stDataEditor, .stDataFrame { background-color: #134971 !important; border-radius: 10px !important; }
     h1, h2, h3, p, span, label { color: white !important; text-align: center; }
     </style>
     """, unsafe_allow_html=True)
@@ -125,8 +71,7 @@ def obtener_conteo_productos(df):
         for p in partes:
             if "(" in p and ")" in p:
                 try:
-                    nombre = p.split("(")[0]
-                    cantidad = int(p.split("(")[1].replace(")", ""))
+                    nombre = p.split("(")[0]; cantidad = int(p.split("(")[1].replace(")", ""))
                     conteo[nombre] = conteo.get(nombre, 0) + cantidad
                 except: continue
     if not conteo: return pd.DataFrame()
@@ -165,8 +110,7 @@ if choice == "🛒 Ventas":
                 sub = item['precio'] * item['cantidad']; total_v += sub
                 c1, c2 = st.columns([5, 1])
                 c1.write(f"**{item['nombre']} x{item['cantidad']}** (₡{int(sub)})")
-                if c2.button("X", key=f"del_{pid}"):
-                    del st.session_state.carrito[pid]; st.rerun()
+                if c2.button("X", key=f"del_{pid}"): del st.session_state.carrito[pid]; st.rerun()
             st.divider()
             metodo = st.selectbox("Forma de Pago", ["Efectivo", "SINPE Móvil", "Crédito"])
             cliente_n = ""
@@ -191,8 +135,7 @@ elif choice == "📦 Inventario":
     _, mid, _ = st.columns([1, 5, 1])
     with mid:
         df_ed = st.data_editor(df_inv, column_config={
-            "id": None, 
-            "nombre": st.column_config.TextColumn("Producto", width="medium"),
+            "id": None, "nombre": st.column_config.TextColumn("Producto", width="medium"),
             "precio": st.column_config.NumberColumn("Precio", width="small", format="₡%d"),
             "stock": st.column_config.NumberColumn("Stock", width="small"),
             "Eliminar": st.column_config.CheckboxColumn("Seleccionar", default=False)
@@ -216,10 +159,18 @@ elif choice == "📦 Inventario":
         
         st.divider()
         with st.expander("➕ Agregar Nuevo Producto"):
-            with st.form("new_p"):
-                n, p, s = st.text_input("Nombre"), st.number_input("Precio"), st.number_input("Stock")
+            # AQUÍ EL CAMBIO: form_clear_on_submit=True limpia los campos automáticamente
+            with st.form("new_p", clear_on_submit=True):
+                n = st.text_input("Nombre")
+                p = st.number_input("Precio", min_value=0)
+                s = st.number_input("Stock", min_value=0)
                 if st.form_submit_button("Añadir"):
-                    c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (n,p,s)); conn.commit(); st.rerun()
+                    if n:
+                        c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (n,p,s))
+                        conn.commit()
+                        st.success(f"{n} guardado.")
+                        st.rerun()
+                    else: st.error("El nombre es obligatorio")
 
 elif choice == "📊 Productos Vendidos":
     st.header("📊 Resumen de Productos Vendidos")
@@ -254,8 +205,7 @@ elif choice == "📋 Reportes":
     if not df_p.empty:
         df_p['Eliminar'] = False
         df_p_ed = st.data_editor(df_p, column_config={
-            "id": None, 
-            "fecha": st.column_config.TextColumn("Fecha", width="small"),
+            "id": None, "fecha": st.column_config.TextColumn("Fecha", width="small"),
             "total": st.column_config.NumberColumn("Total", format="₡%d", width="small"),
             "metodo": st.column_config.SelectboxColumn("Método", options=["Efectivo", "SINPE Móvil", "Crédito"], width="small"),
             "detalle": st.column_config.TextColumn("Detalle", width="large"),
