@@ -3,13 +3,24 @@ import sqlite3
 import pandas as pd
 from datetime import datetime
 import io
+import os
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Metropoli Cafe", page_icon="🏀", layout="wide")
 
-# 2. Conexión a Base de Datos
+# 2. Conexión a Base de Datos (MODIFICADA PARA RAILWAY)
 def conectar_db():
-    conn = sqlite3.connect('metropoli.db', check_same_thread=False)
+    # Esta es la ruta del Volumen que configuramos en Railway
+    ruta_volumen = '/app/data/metropoli.db'
+    
+    # Si la carpeta del volumen existe, usamos esa ruta (estamos en la nube)
+    if os.path.exists('/app/data'):
+        ruta = ruta_volumen
+    else:
+        # Si no existe, usamos la ruta local (estamos en Replit o PC)
+        ruta = 'metropoli.db'
+        
+    conn = sqlite3.connect(ruta, check_same_thread=False)
     return conn
 
 conn = conectar_db()
@@ -126,9 +137,8 @@ def to_csv(df):
 
 # --- BARRA LATERAL ---
 st.sidebar.image("https://github.com/Trycak/Metropoli-app/blob/main/Logo%20Metropoli.png?raw=true", use_container_width=True)
-# NUEVO ORDEN Y NOMBRES SOLICITADOS
 menu = ["🛒 Ventas", "📦 Inventario", "📊 Productos Vendidos", "📝 Cuentas por Cobrar", "📋 Reportes"]
-choice = st.sidebar.radio("", menu)
+choice = st.sidebar.radio("Nav", menu, label_visibility="collapsed")
 
 # --- SECCIONES ---
 if choice == "🛒 Ventas":
