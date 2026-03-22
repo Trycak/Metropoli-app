@@ -60,15 +60,6 @@ st.markdown("""
     }
     .stDataEditor, .stDataFrame { background-color: #134971 !important; border-radius: 10px !important; }
     h1, h2, h3, p, span, label { color: white !important; text-align: center; }
-    
-    /* Estilo para el Total Resaltado */
-    .total-container {
-        background-color: rgba(40, 165, 169, 0.3);
-        padding: 15px;
-        border-radius: 10px;
-        border: 1px solid #28a5a9;
-        margin: 10px 0px;
-    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -116,20 +107,10 @@ if choice == "🛒 Ventas":
         if st.session_state.carrito:
             total_v = 0
             for pid, item in list(st.session_state.carrito.items()):
-                sub = item['precio'] * item['cantidad']
-                total_v += sub
+                sub = item['precio'] * item['cantidad']; total_v += sub
                 c1, c2 = st.columns([5, 1])
                 c1.write(f"**{item['nombre']} x{item['cantidad']}** (₡{int(sub)})")
                 if c2.button("X", key=f"del_{pid}"): del st.session_state.carrito[pid]; st.rerun()
-            
-            # --- SECCIÓN DEL TOTAL (NUEVA) ---
-            st.markdown(f"""
-                <div class="total-container">
-                    <h3 style="margin:0;">TOTAL A CANCELAR:</h3>
-                    <h1 style="margin:0; color: #28a5a9;">₡{int(total_v)}</h1>
-                </div>
-            """, unsafe_allow_html=True)
-            
             st.divider()
             metodo = st.selectbox("Forma de Pago", ["Efectivo", "SINPE Móvil", "Crédito"])
             cliente_n = ""
@@ -137,7 +118,6 @@ if choice == "🛒 Ventas":
                 clientes_db = pd.read_sql_query("SELECT DISTINCT cliente FROM ventas WHERE metodo = 'Crédito' AND cliente != ''", conn)['cliente'].tolist()
                 opc = st.selectbox("Seleccionar Cliente", ["-- Nuevo --"] + clientes_db)
                 cliente_n = st.text_input("Nombre del Cliente") if opc == "-- Nuevo --" else opc
-            
             if st.button("✅ FINALIZAR VENTA", use_container_width=True):
                 if metodo == "Crédito" and not cliente_n: st.error("Falta nombre")
                 else:
@@ -148,7 +128,6 @@ if choice == "🛒 Ventas":
                     conn.commit(); st.session_state.carrito = {}; st.success("¡Venta Lista!"); st.rerun()
         else: st.info("El carrito está vacío")
 
-# --- (El resto del código se mantiene igual que tu versión madre) ---
 elif choice == "📦 Inventario":
     st.header("📦 Inventario")
     df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
@@ -180,6 +159,7 @@ elif choice == "📦 Inventario":
         
         st.divider()
         with st.expander("➕ Agregar Nuevo Producto"):
+            # AQUÍ EL CAMBIO: form_clear_on_submit=True limpia los campos automáticamente
             with st.form("new_p", clear_on_submit=True):
                 n = st.text_input("Nombre")
                 p = st.number_input("Precio", min_value=0)
@@ -187,7 +167,9 @@ elif choice == "📦 Inventario":
                 if st.form_submit_button("Añadir"):
                     if n:
                         c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (n,p,s))
-                        conn.commit(); st.success(f"{n} guardado."); st.rerun()
+                        conn.commit()
+                        st.success(f"{n} guardado.")
+                        st.rerun()
                     else: st.error("El nombre es obligatorio")
 
 elif choice == "📊 Productos Vendidos":
