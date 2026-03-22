@@ -27,65 +27,58 @@ c.execute('CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, fecha TEXT
 c.execute('CREATE TABLE IF NOT EXISTS históricos_reportes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_caja REAL)')
 conn.commit()
 
-# --- ESTILOS VISUALES (COLOR NARANJA #ff6b1d + TEXTO NEGRO) ---
+# --- ESTILOS VISUALES EVOLUCIONADOS ---
 st.markdown("""
     <style>
     .stApp { background-color: #134971 !important; }
     [data-testid="stSidebar"] { background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true"); background-size: cover; }
     
-    /* Forzar color de texto global en blanco para títulos y etiquetas */
     h1, h2, h3, p, span, label, .stMarkdown { color: white !important; text-align: center; }
     
-    /* --- DISEÑO DE BOTONES DE PRODUCTOS (NARANJA #ff6b1d) --- */
+    /* BOTÓN ESTÁNDAR (CON STOCK) */
     div.stButton > button {
         -webkit-appearance: none !important;
         appearance: none !important;
-        background-color: #ff6b1d !important; /* NARANJA ELEGIDO */
-        color: #000000 !important;           /* TEXTO NEGRO PARA CONTRASTE */
-        border: 2px solid #d15615 !important; /* Borde naranja más oscuro */
+        background-color: #ff6b1d !important; 
+        color: #000000 !important;           
+        border: 2px solid #d15615 !important; 
         border-radius: 12px !important;
         font-weight: bold !important;
         font-size: 18px !important;
-        opacity: 1 !important;
-        display: block !important;
-        transition: transform 0.1s ease;
-    }
-
-    div.stButton > button[key^="p_"] {
         height: 115px !important; 
         width: 100% !important; 
         margin-bottom: 10px !important;
-        white-space: pre-line !important; /* Permite el salto de línea para nombre y precio */
+        display: block !important;
+        white-space: pre-line !important;
+    }
+
+    /* BOTÓN SIN STOCK (AGOTADO) */
+    div.stButton > button:disabled {
+        background-color: #000000 !important; /* FONDO NEGRO */
+        color: #444444 !important;           /* TEXTO GRIS OSCURO */
+        border: 2px solid #333333 !important;
+        cursor: not-allowed !important;
+        opacity: 1 !important; /* Para que iOS no le baje la opacidad */
     }
     
-    /* Efecto al presionar o pasar el mouse */
-    div.stButton > button:hover, div.stButton > button:active, div.stButton > button:focus {
+    div.stButton > button:hover:not(:disabled) {
         background-color: #e55a12 !important;
-        color: #000000 !important;
         border-color: #000000 !important;
         transform: scale(0.98);
     }
 
     .total-carrito {
-        background-color: rgba(255, 107, 29, 0.15); /* Fondo naranja suave para el total */
+        background-color: rgba(255, 107, 29, 0.15);
         padding: 20px;
         border-radius: 15px;
         border: 2px solid #ff6b1d;
         margin: 15px 0px;
         text-align: center;
     }
-    .info-caja {
-        background-color: rgba(255, 255, 255, 0.1);
-        padding: 15px;
-        border-radius: 10px;
-        border: 1px solid #ff6b1d;
-        margin-bottom: 20px;
-    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- (El resto del código de funciones y secciones se mantiene igual para no perder nada) ---
-
+# --- (Funciones de conteo se mantienen igual) ---
 def obtener_conteo_productos(df):
     conteo = {}
     for detalle in df['detalle']:
@@ -100,26 +93,34 @@ def obtener_conteo_productos(df):
     if not conteo: return pd.DataFrame()
     return pd.DataFrame(list(conteo.items()), columns=['Producto', 'Cant.'], ).sort_values(by='Cant.', ascending=False)
 
-# --- BARRA LATERAL ---
+# --- MENÚ LATERAL ---
 st.sidebar.image("https://github.com/Trycak/Metropoli-app/blob/main/Logo%20Metropoli.png?raw=true", use_container_width=True)
 menu = ["🛒 Ventas", "📦 Inventario", "📊 Productos Vendidos", "📝 Cuentas por Cobrar", "📋 Reportes"]
 choice = st.sidebar.radio("Nav", menu, label_visibility="collapsed")
 
+# --- SECCIÓN VENTAS CON CAMBIO DE COLOR DINÁMICO ---
 if choice == "🛒 Ventas":
     if 'carrito' not in st.session_state: st.session_state.carrito = {}
     col_prods, col_cart = st.columns([2, 1])
+    
     with col_prods:
         st.subheader("🛒 Productos Disponibles")
         prods = pd.read_sql_query("SELECT * FROM productos ORDER BY nombre ASC", conn)
         grid = st.columns(3)
         for i, row in prods.iterrows():
             with grid[i % 3]:
-                texto_final = f"{row['nombre']} ({int(row['stock'])})\n₡{int(row['precio'])}"
-                if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock']<=0):
+                # Si el stock es 0 o menor, el texto cambia a "AGOTADO"
+                label_stock = f"({int(row['stock'])})" if row['stock'] > 0 else "(AGOTADO)"
+                texto_final = f"{row['nombre']} {label_stock}\n₡{int(row['precio'])}"
+                
+                # El botón se deshabilita automáticamente si stock <= 0
+                # El CSS que pusimos arriba detecta el "disabled" y lo pone negro
+                if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock'] <= 0):
                     pid = str(row['id'])
                     if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
                     else: st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
                     st.rerun()
+    
     with col_cart:
         st.subheader("🛒 Carrito")
         if st.session_state.carrito:
@@ -129,7 +130,9 @@ if choice == "🛒 Ventas":
                 c1, c2 = st.columns([5, 1])
                 c1.write(f"**{item['nombre']} x{item['cantidad']}** (₡{int(sub)})")
                 if c2.button("X", key=f"del_{pid}"): del st.session_state.carrito[pid]; st.rerun()
+            
             st.markdown(f"""<div class="total-carrito"><p style="margin:0; font-size:16px; color:#ff6b1d;">MONTO A PAGAR</p><h1 style="margin:0; font-size:45px; color:white;">₡{int(total_v)}</h1></div>""", unsafe_allow_html=True)
+            
             st.divider()
             metodo = st.selectbox("Forma de Pago", ["Efectivo", "SINPE Móvil", "Crédito"])
             cliente_n = ""
@@ -137,6 +140,7 @@ if choice == "🛒 Ventas":
                 clientes_db = pd.read_sql_query("SELECT DISTINCT cliente FROM ventas WHERE metodo = 'Crédito' AND cliente != ''", conn)['cliente'].tolist()
                 opc = st.selectbox("Seleccionar Cliente", ["-- Nuevo --"] + clientes_db)
                 cliente_n = st.text_input("Nombre del Cliente") if opc == "-- Nuevo --" else opc
+            
             if st.button("✅ FINALIZAR VENTA", use_container_width=True):
                 if metodo == "Crédito" and not cliente_n: st.error("Falta nombre")
                 else:
@@ -147,6 +151,7 @@ if choice == "🛒 Ventas":
                     conn.commit(); st.session_state.carrito = {}; st.success("¡Venta Lista!"); st.rerun()
         else: st.info("El carrito está vacío")
 
+# --- (Las secciones de Inventario, Productos Vendidos, Deudores y Reportes se mantienen igual) ---
 elif choice == "📦 Inventario":
     st.header("📦 Gestión de Inventario")
     df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
