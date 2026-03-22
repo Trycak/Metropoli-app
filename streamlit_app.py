@@ -27,49 +27,27 @@ c.execute('CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, fecha TEXT
 c.execute('CREATE TABLE IF NOT EXISTS históricos_reportes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_caja REAL)')
 conn.commit()
 
-# --- ESTILOS VISUALES REFORZADOS (PARA FORZAR EL GRIS Y EL TAMAÑO) ---
+# --- ESTILOS VISUALES ---
 st.markdown("""
     <style>
     .stApp { background-color: #134971 !important; }
-    
-    /* ESTILO PARA LOS BOTONES DE PRODUCTOS */
-    /* Usamos selectores más específicos para ganarle al estilo por defecto */
-    div.stButton > button[key^="p_"] {
-        background-color: #4A4A4A !important; 
-        color: white !important;
-        border-radius: 15px !important;
-        height: 160px !important; /* Aún más grandes */
-        width: 100% !important;
-        font-weight: 800 !important;
-        font-size: 24px !important; /* Letra muy clara */
-        border: 3px solid #777777 !important;
-        margin-bottom: 15px !important;
-        display: block !important;
-        box-shadow: 0px 4px 10px rgba(0,0,0,0.3) !important;
-        white-space: pre-wrap !important;
-        line-height: 1.2 !important;
-    }
-
-    /* Efecto cuando se pasa el mouse */
-    div.stButton > button[key^="p_"]:hover {
-        background-color: #606060 !important;
-        border-color: #28a5a9 !important;
-        transform: scale(1.02);
-        transition: 0.2s;
-    }
-
-    /* Estilo del Carrito y Total */
-    .total-container {
-        background-color: rgba(0, 0, 0, 0.3);
-        padding: 20px;
-        border-radius: 15px;
-        border: 2px solid #28a5a9;
-        margin: 20px 0px;
-        text-align: center;
-    }
-
-    .stDataEditor, .stDataFrame { background-color: #134971 !important; border-radius: 10px !important; }
+    [data-testid="stSidebar"] { background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true"); background-size: cover; }
     h1, h2, h3, p, span, label { color: white !important; text-align: center; }
+    .stDataEditor, .stDataFrame { background-color: #134971 !important; border-radius: 10px !important; }
+    
+    /* Botones de Productos (Manteniendo la estructura para futuras mejoras) */
+    div.stButton > button[key^="p_"] {
+        background-color: #28a5a9 !important; color: white !important; border-radius: 12px !important;
+        height: 115px !important; width: 100% !important; font-weight: bold !important; font-size: 18px !important;
+    }
+    
+    .info-caja {
+        background-color: rgba(255, 255, 255, 0.1);
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #28a5a9;
+        margin-bottom: 20px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -99,17 +77,14 @@ choice = st.sidebar.radio("Nav", menu, label_visibility="collapsed")
 if choice == "🛒 Ventas":
     if 'carrito' not in st.session_state: st.session_state.carrito = {}
     col_prods, col_cart = st.columns([2, 1])
-    
     with col_prods:
-        st.subheader("🛒 Seleccionar Productos (A-Z)")
-        # Consulta con Orden Alfabético
+        st.subheader("🛒 Productos Disponibles")
         prods = pd.read_sql_query("SELECT * FROM productos ORDER BY nombre ASC", conn)
         grid = st.columns(3)
         for i, row in prods.iterrows():
             with grid[i % 3]:
-                # Texto en mayúsculas y más limpio
-                texto_boton = f"{row['nombre'].upper()}\nStock: {int(row['stock'])}\n₡{int(row['precio'])}"
-                if st.button(texto_boton, key=f"p_{row['id']}", disabled=row['stock']<=0):
+                texto_final = f"{row['nombre']} ({int(row['stock'])})\n₡{int(row['precio'])}"
+                if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock']<=0):
                     pid = str(row['id'])
                     if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
                     else: st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
@@ -120,20 +95,10 @@ if choice == "🛒 Ventas":
         if st.session_state.carrito:
             total_v = 0
             for pid, item in list(st.session_state.carrito.items()):
-                sub = item['precio'] * item['cantidad']
-                total_v += sub
+                sub = item['precio'] * item['cantidad']; total_v += sub
                 c1, c2 = st.columns([5, 1])
                 c1.write(f"**{item['nombre']} x{item['cantidad']}** (₡{int(sub)})")
                 if c2.button("X", key=f"del_{pid}"): del st.session_state.carrito[pid]; st.rerun()
-            
-            # TOTAL GRANDE Y VISIBLE
-            st.markdown(f"""
-                <div class="total-container">
-                    <p style="margin:0; font-size:18px; color:#28a5a9;">MONTO TOTAL</p>
-                    <h1 style="margin:0; font-size:50px;">₡{int(total_v)}</h1>
-                </div>
-            """, unsafe_allow_html=True)
-            
             st.divider()
             metodo = st.selectbox("Forma de Pago", ["Efectivo", "SINPE Móvil", "Crédito"])
             cliente_n = ""
@@ -141,7 +106,6 @@ if choice == "🛒 Ventas":
                 clientes_db = pd.read_sql_query("SELECT DISTINCT cliente FROM ventas WHERE metodo = 'Crédito' AND cliente != ''", conn)['cliente'].tolist()
                 opc = st.selectbox("Seleccionar Cliente", ["-- Nuevo --"] + clientes_db)
                 cliente_n = st.text_input("Nombre del Cliente") if opc == "-- Nuevo --" else opc
-            
             if st.button("✅ FINALIZAR VENTA", use_container_width=True):
                 if metodo == "Crédito" and not cliente_n: st.error("Falta nombre")
                 else:
@@ -152,7 +116,6 @@ if choice == "🛒 Ventas":
                     conn.commit(); st.session_state.carrito = {}; st.success("¡Venta Lista!"); st.rerun()
         else: st.info("El carrito está vacío")
 
-# --- (Las demás secciones se mantienen iguales para no alterar la lógica) ---
 elif choice == "📦 Inventario":
     st.header("📦 Inventario")
     df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
@@ -202,27 +165,46 @@ elif choice == "📊 Productos Vendidos":
         _, mid, _ = st.columns([1, 2, 1])
         with mid:
             st.dataframe(df_res, hide_index=True, use_container_width=True)
-            st.download_button(label="📥 EXPORTAR RESUMEN", data=to_csv(df_res), file_name=f"resumen_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
     else: st.info("No hay ventas registradas.")
 
 elif choice == "📝 Cuentas por Cobrar":
     st.header("📝 Gestión de Créditos")
+    # 1. Ver resumen de deudores
     df_cc = pd.read_sql_query("SELECT cliente, SUM(total) as deuda FROM ventas WHERE metodo = 'Crédito' GROUP BY cliente", conn)
+    
     if not df_cc.empty:
-        _, mid, _ = st.columns([1, 2, 1])
-        with mid:
+        col_lista, col_detalle = st.columns([1, 2])
+        
+        with col_lista:
+            st.subheader("Lista de Deudores")
             st.dataframe(df_cc, hide_index=True, use_container_width=True,
-                         column_config={"cliente": "Cliente", "deuda": st.column_config.NumberColumn("Deuda", format="₡%d")})
-            cl_paga = st.selectbox("Cliente:", df_cc['cliente'].tolist())
-            monto = df_cc[df_cc['cliente'] == cl_paga]['deuda'].values[0]
+                         column_config={"cliente": "Cliente", "deuda": st.column_config.NumberColumn("Total Deuda", format="₡%d")})
+            cl_paga = st.selectbox("Seleccionar Cliente para Revisar:", df_cc['cliente'].tolist())
+        
+        with col_detalle:
+            st.subheader(f"Detalle de Cuenta: {cl_paga}")
+            # 2. NUEVA FUNCIÓN: Ver artículos por cliente
+            df_detalle_cliente = pd.read_sql_query("SELECT fecha, detalle, total FROM ventas WHERE cliente = ? AND metodo = 'Crédito'", conn, params=(cl_paga,))
+            
+            st.dataframe(df_detalle_cliente, hide_index=True, use_container_width=True,
+                         column_config={
+                             "fecha": "Fecha",
+                             "detalle": "Artículos Llevados",
+                             "total": st.column_config.NumberColumn("Monto", format="₡%d")
+                         })
+            
+            monto_total = df_cc[df_cc['cliente'] == cl_paga]['deuda'].values[0]
+            st.markdown(f"""<div class='info-caja'><h3>Monto Total a Cobrar: ₡{int(monto_total)}</h3></div>""", unsafe_allow_html=True)
+            
             metodo_pago_deuda = st.selectbox("Recibir pago por:", ["Efectivo", "SINPE Móvil"])
-            if st.button(f"Saldar Deuda (₡{int(monto)})", use_container_width=True):
+            if st.button(f"Saldar Deuda de {cl_paga}", use_container_width=True):
                 c.execute("UPDATE ventas SET metodo = ?, fecha = ? WHERE cliente = ? AND metodo = 'Crédito'", (metodo_pago_deuda, f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Saldado)", cl_paga))
-                conn.commit(); st.success("Cuenta cancelada"); st.rerun()
-    else: st.info("No hay deudas pendientes.")
+                conn.commit(); st.success(f"¡La cuenta de {cl_paga} ha sido cancelada!"); st.rerun()
+    else:
+        st.info("No hay deudas pendientes en este momento.")
 
 elif choice == "📋 Reportes":
-    st.header("📋 Ventas")
+    st.header("📋 Ventas del Periodo Actual")
     df_p = pd.read_sql_query("SELECT id, fecha, total, metodo, detalle, cliente FROM ventas WHERE reporte_id IS NULL", conn)
     if not df_p.empty:
         df_p['Eliminar'] = False
@@ -233,26 +215,6 @@ elif choice == "📋 Reportes":
             "detalle": st.column_config.TextColumn("Detalle", width="large"),
             "Eliminar": st.column_config.CheckboxColumn("Borrar?", default=False)
         }, hide_index=True, use_container_width=True)
-        
-        col_r1, col_r2 = st.columns(2)
-        with col_r1:
-            if st.button("💾 Guardar Cambios en Métodos", use_container_width=True):
-                for _, row in df_p_ed.iterrows(): c.execute("UPDATE ventas SET metodo = ? WHERE id = ?", (row['metodo'], int(row['id'])))
-                conn.commit(); st.success("Métodos actualizados"); st.rerun()
-        with col_r2:
-            if st.button("🗑️ ELIMINAR SELECCIONADAS", use_container_width=True):
-                ventas_a_borrar = df_p_ed[df_p_ed['Eliminar'] == True]
-                for _, v in ventas_a_borrar.iterrows():
-                    det = v['detalle'].split(", ")
-                    for item in det:
-                        if "(" in item:
-                            n_prod = item.split("(")[0]; cant = int(item.split("(")[1].replace(")", ""))
-                            c.execute("UPDATE productos SET stock = stock + ? WHERE nombre = ?", (cant, n_prod))
-                    c.execute("DELETE FROM ventas WHERE id = ?", (int(v['id']),))
-                conn.commit(); st.success("Ventas eliminadas"); st.rerun()
-        
-        st.divider()
-        st.download_button(label="📥 EXPORTAR REPORTE CSV", data=to_csv(df_p_ed.drop(columns=['Eliminar'])), file_name=f"reporte_{datetime.now().strftime('%Y%m%d')}.csv", mime="text/csv", use_container_width=True)
         
         if st.button("🔴 CERRAR CAJA", use_container_width=True):
             tot = df_p_ed[(df_p_ed['metodo']!='Crédito') & (df_p_ed['Eliminar']==False)]['total'].sum()
