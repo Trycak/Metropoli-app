@@ -8,7 +8,7 @@ import os
 # 1. Configuración de la página
 st.set_page_config(page_title="Metropoli Cafe", page_icon="🏀", layout="wide")
 
-# 2. Conexión a Base de Datos (AJUSTADA PARA RAILWAY)
+# 2. Conexión a Base de Datos
 def conectar_db():
     ruta_volumen = '/app/data/metropoli.db'
     if os.path.exists('/app/data'):
@@ -27,47 +27,44 @@ c.execute('CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, fecha TEXT
 c.execute('CREATE TABLE IF NOT EXISTS históricos_reportes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_caja REAL)')
 conn.commit()
 
-# --- ESTILOS VISUALES PERSONALIZADOS (BOTONES GRISES Y GRANDES) ---
+# --- ESTILOS VISUALES REFORZADOS (PARA FORZAR EL GRIS Y EL TAMAÑO) ---
 st.markdown("""
     <style>
     .stApp { background-color: #134971 !important; }
-    .stApp::before {
-        content: "";
-        background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Logo%20Metropoli%20opacidad.png?raw=true");
-        background-repeat: no-repeat; background-attachment: fixed; background-position: center; background-size: 600px;
-        position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1;
-    }
-    [data-testid="stSidebar"] {
-        background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true");
-        background-size: cover;
-    }
     
-    /* ESTILO BOTONES DE PRODUCTO */
+    /* ESTILO PARA LOS BOTONES DE PRODUCTOS */
+    /* Usamos selectores más específicos para ganarle al estilo por defecto */
     div.stButton > button[key^="p_"] {
-        background-color: #4A4A4A !important; /* COLOR GRIS */
+        background-color: #4A4A4A !important; 
         color: white !important;
         border-radius: 15px !important;
-        height: 150px !important; /* ALTURA GRANDE */
+        height: 160px !important; /* Aún más grandes */
         width: 100% !important;
-        font-weight: bold !important;
-        font-size: 22px !important; /* TEXTO GRANDE */
-        border: 2px solid #666666 !important;
-        transition: 0.3s;
+        font-weight: 800 !important;
+        font-size: 24px !important; /* Letra muy clara */
+        border: 3px solid #777777 !important;
+        margin-bottom: 15px !important;
+        display: block !important;
+        box-shadow: 0px 4px 10px rgba(0,0,0,0.3) !important;
         white-space: pre-wrap !important;
+        line-height: 1.2 !important;
     }
-    
+
+    /* Efecto cuando se pasa el mouse */
     div.stButton > button[key^="p_"]:hover {
         background-color: #606060 !important;
         border-color: #28a5a9 !important;
+        transform: scale(1.02);
+        transition: 0.2s;
     }
 
-    /* ESTILO PARA EL TOTAL RESALTADO */
-    .total-box {
-        background-color: rgba(40, 165, 169, 0.3);
-        padding: 15px;
-        border-radius: 10px;
-        border: 1px solid #28a5a9;
-        margin: 10px 0px;
+    /* Estilo del Carrito y Total */
+    .total-container {
+        background-color: rgba(0, 0, 0, 0.3);
+        padding: 20px;
+        border-radius: 15px;
+        border: 2px solid #28a5a9;
+        margin: 20px 0px;
         text-align: center;
     }
 
@@ -102,16 +99,17 @@ choice = st.sidebar.radio("Nav", menu, label_visibility="collapsed")
 if choice == "🛒 Ventas":
     if 'carrito' not in st.session_state: st.session_state.carrito = {}
     col_prods, col_cart = st.columns([2, 1])
+    
     with col_prods:
-        st.subheader("🛒 Seleccionar Productos")
-        # ORDEN ALFABÉTICO REFORZADO AQUÍ
+        st.subheader("🛒 Seleccionar Productos (A-Z)")
+        # Consulta con Orden Alfabético
         prods = pd.read_sql_query("SELECT * FROM productos ORDER BY nombre ASC", conn)
         grid = st.columns(3)
         for i, row in prods.iterrows():
             with grid[i % 3]:
-                # Nombre en MAYÚSCULAS para que se lea mejor
-                texto_final = f"{row['nombre'].upper()}\n({int(row['stock'])})\n₡{int(row['precio'])}"
-                if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock']<=0):
+                # Texto en mayúsculas y más limpio
+                texto_boton = f"{row['nombre'].upper()}\nStock: {int(row['stock'])}\n₡{int(row['precio'])}"
+                if st.button(texto_boton, key=f"p_{row['id']}", disabled=row['stock']<=0):
                     pid = str(row['id'])
                     if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
                     else: st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
@@ -122,19 +120,20 @@ if choice == "🛒 Ventas":
         if st.session_state.carrito:
             total_v = 0
             for pid, item in list(st.session_state.carrito.items()):
-                sub = item['precio'] * item['cantidad']; total_v += sub
+                sub = item['precio'] * item['cantidad']
+                total_v += sub
                 c1, c2 = st.columns([5, 1])
                 c1.write(f"**{item['nombre']} x{item['cantidad']}** (₡{int(sub)})")
                 if c2.button("X", key=f"del_{pid}"): del st.session_state.carrito[pid]; st.rerun()
             
-            # CUADRO DE TOTAL RESALTADO
+            # TOTAL GRANDE Y VISIBLE
             st.markdown(f"""
-                <div class="total-box">
-                    <h3 style="margin:0; font-size: 20px;">TOTAL A COBRAR</h3>
-                    <h1 style="margin:0; font-size: 40px; color: white;">₡{int(total_v)}</h1>
+                <div class="total-container">
+                    <p style="margin:0; font-size:18px; color:#28a5a9;">MONTO TOTAL</p>
+                    <h1 style="margin:0; font-size:50px;">₡{int(total_v)}</h1>
                 </div>
             """, unsafe_allow_html=True)
-
+            
             st.divider()
             metodo = st.selectbox("Forma de Pago", ["Efectivo", "SINPE Móvil", "Crédito"])
             cliente_n = ""
@@ -142,6 +141,7 @@ if choice == "🛒 Ventas":
                 clientes_db = pd.read_sql_query("SELECT DISTINCT cliente FROM ventas WHERE metodo = 'Crédito' AND cliente != ''", conn)['cliente'].tolist()
                 opc = st.selectbox("Seleccionar Cliente", ["-- Nuevo --"] + clientes_db)
                 cliente_n = st.text_input("Nombre del Cliente") if opc == "-- Nuevo --" else opc
+            
             if st.button("✅ FINALIZAR VENTA", use_container_width=True):
                 if metodo == "Crédito" and not cliente_n: st.error("Falta nombre")
                 else:
@@ -152,6 +152,7 @@ if choice == "🛒 Ventas":
                     conn.commit(); st.session_state.carrito = {}; st.success("¡Venta Lista!"); st.rerun()
         else: st.info("El carrito está vacío")
 
+# --- (Las demás secciones se mantienen iguales para no alterar la lógica) ---
 elif choice == "📦 Inventario":
     st.header("📦 Inventario")
     df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
@@ -190,9 +191,7 @@ elif choice == "📦 Inventario":
                 if st.form_submit_button("Añadir"):
                     if n:
                         c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (n,p,s))
-                        conn.commit()
-                        st.success(f"{n} guardado.")
-                        st.rerun()
+                        conn.commit(); st.success(f"{n} guardado."); st.rerun()
                     else: st.error("El nombre es obligatorio")
 
 elif choice == "📊 Productos Vendidos":
