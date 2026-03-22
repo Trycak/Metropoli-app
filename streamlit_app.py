@@ -144,7 +144,7 @@ elif choice == "📝 Cuentas por Cobrar":
                 "fecha": st.column_config.TextColumn("Fecha", disabled=True),
                 "detalle": st.column_config.TextColumn("Artículos", width="large"),
                 "total": st.column_config.NumberColumn("Monto", format="₡%d"),
-                "Borrar?": st.column_config.CheckboxColumn("¿Error?", default=False)
+                "Borrar?": st.column_config.CheckboxColumn("Seleccionar", default=False)
             }, hide_index=True, use_container_width=True)
 
             c1, c2 = st.columns(2)
