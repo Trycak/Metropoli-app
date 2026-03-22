@@ -27,7 +27,7 @@ c.execute('CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, fecha TEXT
 c.execute('CREATE TABLE IF NOT EXISTS históricos_reportes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_caja REAL)')
 conn.commit()
 
-# --- ESTILOS VISUALES PERSONALIZADOS ---
+# --- ESTILOS VISUALES PERSONALIZADOS (BOTONES GRISES Y GRANDES) ---
 st.markdown("""
     <style>
     .stApp { background-color: #134971 !important; }
@@ -41,23 +41,36 @@ st.markdown("""
         background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true");
         background-size: cover;
     }
-    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] { padding-top: 0rem !important; gap: 0rem !important; }
-    [data-testid="stSidebar"] .stRadio > label { display: none !important; }
-    [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label {
-        background-color: rgba(255, 255, 255, 0.1) !important;
-        border-radius: 10px !important; padding: 10px 15px !important; 
-        margin-bottom: 6px !important; width: 100% !important;
-        border: 1px solid rgba(255,255,255,0.2) !important;
-    }
-    [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label p {
-        color: white !important; font-weight: bold !important; font-size: 18px !important;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
-    }
-    [data-testid="stSidebar"] [data-testid="stImage"] { padding-top: 10px !important; margin-top: -20px !important; }
+    
+    /* ESTILO BOTONES DE PRODUCTO */
     div.stButton > button[key^="p_"] {
-        background-color: #28a5a9 !important; color: white !important; border-radius: 12px !important;
-        height: 115px !important; width: 100% !important; font-weight: bold !important; font-size: 18px !important;
+        background-color: #4A4A4A !important; /* COLOR GRIS */
+        color: white !important;
+        border-radius: 15px !important;
+        height: 150px !important; /* ALTURA GRANDE */
+        width: 100% !important;
+        font-weight: bold !important;
+        font-size: 22px !important; /* TEXTO GRANDE */
+        border: 2px solid #666666 !important;
+        transition: 0.3s;
+        white-space: pre-wrap !important;
     }
+    
+    div.stButton > button[key^="p_"]:hover {
+        background-color: #606060 !important;
+        border-color: #28a5a9 !important;
+    }
+
+    /* ESTILO PARA EL TOTAL RESALTADO */
+    .total-box {
+        background-color: rgba(40, 165, 169, 0.3);
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #28a5a9;
+        margin: 10px 0px;
+        text-align: center;
+    }
+
     .stDataEditor, .stDataFrame { background-color: #134971 !important; border-radius: 10px !important; }
     h1, h2, h3, p, span, label { color: white !important; text-align: center; }
     </style>
@@ -90,12 +103,14 @@ if choice == "🛒 Ventas":
     if 'carrito' not in st.session_state: st.session_state.carrito = {}
     col_prods, col_cart = st.columns([2, 1])
     with col_prods:
-        st.subheader("🛒 Productos Disponibles")
+        st.subheader("🛒 Seleccionar Productos")
+        # ORDEN ALFABÉTICO REFORZADO AQUÍ
         prods = pd.read_sql_query("SELECT * FROM productos ORDER BY nombre ASC", conn)
         grid = st.columns(3)
         for i, row in prods.iterrows():
             with grid[i % 3]:
-                texto_final = f"{row['nombre']} ({int(row['stock'])})\n₡{int(row['precio'])}"
+                # Nombre en MAYÚSCULAS para que se lea mejor
+                texto_final = f"{row['nombre'].upper()}\n({int(row['stock'])})\n₡{int(row['precio'])}"
                 if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock']<=0):
                     pid = str(row['id'])
                     if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
@@ -111,6 +126,15 @@ if choice == "🛒 Ventas":
                 c1, c2 = st.columns([5, 1])
                 c1.write(f"**{item['nombre']} x{item['cantidad']}** (₡{int(sub)})")
                 if c2.button("X", key=f"del_{pid}"): del st.session_state.carrito[pid]; st.rerun()
+            
+            # CUADRO DE TOTAL RESALTADO
+            st.markdown(f"""
+                <div class="total-box">
+                    <h3 style="margin:0; font-size: 20px;">TOTAL A COBRAR</h3>
+                    <h1 style="margin:0; font-size: 40px; color: white;">₡{int(total_v)}</h1>
+                </div>
+            """, unsafe_allow_html=True)
+
             st.divider()
             metodo = st.selectbox("Forma de Pago", ["Efectivo", "SINPE Móvil", "Crédito"])
             cliente_n = ""
@@ -159,7 +183,6 @@ elif choice == "📦 Inventario":
         
         st.divider()
         with st.expander("➕ Agregar Nuevo Producto"):
-            # AQUÍ EL CAMBIO: form_clear_on_submit=True limpia los campos automáticamente
             with st.form("new_p", clear_on_submit=True):
                 n = st.text_input("Nombre")
                 p = st.number_input("Precio", min_value=0)
