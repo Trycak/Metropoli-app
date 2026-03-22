@@ -53,15 +53,31 @@ st.markdown("""
         color: white !important; font-weight: bold !important; font-size: 18px !important;
         text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
     }
-    [data-testid="stSidebar"] [data-testid="stImage"] { padding-top: 10px !important; margin-top: -20px !important; }
+    
+    /* --- BOTONES DE PRODUCTOS GRANDES Y GRISES --- */
     div.stButton > button[key^="p_"] {
-        background-color: #28a5a9 !important; color: white !important; border-radius: 12px !important;
-        height: 115px !important; width: 100% !important; font-weight: bold !important; font-size: 18px !important;
+        background-color: #4A4A4A !important; /* Fondo Gris */
+        color: white !important;
+        border-radius: 15px !important;
+        height: 140px !important; /* Más grandes */
+        width: 100% !important;
+        font-weight: bold !important;
+        font-size: 22px !important; /* Letra más grande */
+        white-space: pre !important; 
+        display: block !important;
+        line-height: 1.2 !important;
+        border: 2px solid #666666 !important;
+        transition: 0.3s;
     }
+
+    div.stButton > button[key^="p_"]:hover {
+        background-color: #606060 !important; /* Gris más claro al pasar el mouse */
+        border-color: #28a5a9 !important; /* Borde Metrópoli al seleccionar */
+    }
+
     .stDataEditor, .stDataFrame { background-color: #134971 !important; border-radius: 10px !important; }
     h1, h2, h3, p, span, label { color: white !important; text-align: center; }
     
-    /* Estilo para el Total Resaltado */
     .total-container {
         background-color: rgba(40, 165, 169, 0.3);
         padding: 15px;
@@ -100,11 +116,13 @@ if choice == "🛒 Ventas":
     col_prods, col_cart = st.columns([2, 1])
     with col_prods:
         st.subheader("🛒 Productos Disponibles")
+        # ORDEN ALFABÉTICO (ASC)
         prods = pd.read_sql_query("SELECT * FROM productos ORDER BY nombre ASC", conn)
         grid = st.columns(3)
         for i, row in prods.iterrows():
             with grid[i % 3]:
-                texto_final = f"{row['nombre']} ({int(row['stock'])})\n₡{int(row['precio'])}"
+                # Texto con nombre arriba y precio abajo
+                texto_final = f"{row['nombre'].upper()}\n({int(row['stock'])})\n₡{int(row['precio'])}"
                 if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock']<=0):
                     pid = str(row['id'])
                     if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
@@ -122,7 +140,6 @@ if choice == "🛒 Ventas":
                 c1.write(f"**{item['nombre']} x{item['cantidad']}** (₡{int(sub)})")
                 if c2.button("X", key=f"del_{pid}"): del st.session_state.carrito[pid]; st.rerun()
             
-            # --- SECCIÓN DEL TOTAL (NUEVA) ---
             st.markdown(f"""
                 <div class="total-container">
                     <h3 style="margin:0;">TOTAL A CANCELAR:</h3>
@@ -148,7 +165,7 @@ if choice == "🛒 Ventas":
                     conn.commit(); st.session_state.carrito = {}; st.success("¡Venta Lista!"); st.rerun()
         else: st.info("El carrito está vacío")
 
-# --- (El resto del código se mantiene igual que tu versión madre) ---
+# --- (Resto de secciones sin cambios para mantener integridad) ---
 elif choice == "📦 Inventario":
     st.header("📦 Inventario")
     df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
