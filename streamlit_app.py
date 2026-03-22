@@ -121,29 +121,58 @@ if choice == "🛒 Ventas":
                     conn.commit(); st.session_state.carrito = {}; st.success("¡Venta Lista!"); st.rerun()
         else: st.info("El carrito está vacío")
 
-# --- SECCIÓN 2: INVENTARIO ---
+# --- SECCIÓN 2: INVENTARIO (RESTAURADO COMPLETO) ---
 elif choice == "📦 Inventario":
-    st.header("📦 Inventario")
+    st.header("📦 Gestión de Inventario")
     df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
     df_inv['Eliminar'] = False
-    df_ed = st.data_editor(df_inv, column_config={"id": None, "Eliminar": st.column_config.CheckboxColumn("Borrar?", default=False)}, hide_index=True, use_container_width=True)
-    if st.button("💾 Guardar Cambios"):
-        for _, r in df_ed.iterrows():
-            if r['Eliminar']: c.execute("DELETE FROM productos WHERE id = ?", (int(r['id']),))
-            else: c.execute("UPDATE productos SET nombre=?, precio=?, stock=? WHERE id=?", (r['nombre'], r['precio'], r['stock'], int(r['id'])))
-        conn.commit(); st.rerun()
+    
+    _, mid, _ = st.columns([1, 6, 1])
+    with mid:
+        # Editor de datos principal
+        df_ed = st.data_editor(df_inv, column_config={
+            "id": None,
+            "nombre": st.column_config.TextColumn("Nombre del Producto", width="medium"),
+            "precio": st.column_config.NumberColumn("Precio", format="₡%d"),
+            "stock": st.column_config.NumberColumn("En Stock"),
+            "Eliminar": st.column_config.CheckboxColumn("¿Borrar?", default=False)
+        }, hide_index=True, use_container_width=True)
+        
+        col_inv1, col_inv2 = st.columns(2)
+        with col_inv1:
+            if st.button("💾 Guardar Cambios en Inventario", use_container_width=True):
+                for _, r in df_ed.iterrows():
+                    c.execute("UPDATE productos SET nombre=?, precio=?, stock=? WHERE id=?", (r['nombre'], r['precio'], r['stock'], int(r['id'])))
+                conn.commit(); st.success("Inventario Actualizado"); st.rerun()
+        with col_inv2:
+            if st.button("🗑️ Eliminar Productos Seleccionados", use_container_width=True):
+                a_borrar = df_ed[df_ed['Eliminar'] == True]
+                for _, r in a_borrar.iterrows():
+                    c.execute("DELETE FROM productos WHERE id = ?", (int(r['id']),))
+                conn.commit(); st.success(f"{len(a_borrar)} productos eliminados"); st.rerun()
 
-# --- SECCIÓN 3: PRODUCTOS VENDIDOS (RESTAURADO) ---
+        st.divider()
+        # Formulario para agregar productos nuevos
+        with st.expander("➕ AGREGAR NUEVO PRODUCTO"):
+            with st.form("nuevo_form", clear_on_submit=True):
+                f_nom = st.text_input("Nombre del Producto")
+                f_pre = st.number_input("Precio (₡)", min_value=0, step=100)
+                f_sto = st.number_input("Cantidad Inicial", min_value=0, step=1)
+                if st.form_submit_button("Añadir al Inventario"):
+                    if f_nom:
+                        c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (f_nom, f_pre, f_sto))
+                        conn.commit(); st.success(f"{f_nom} agregado correctamente."); st.rerun()
+                    else: st.error("El nombre es obligatorio")
+
+# --- SECCIÓN 3: PRODUCTOS VENDIDOS ---
 elif choice == "📊 Productos Vendidos":
     st.header("📊 Ranking de Productos Vendidos")
-    # Solo tomamos las ventas que aún no han sido cerradas en caja (periodo actual)
     df_v = pd.read_sql_query("SELECT detalle FROM ventas WHERE reporte_id IS NULL", conn)
     if not df_v.empty:
         df_res = obtener_conteo_productos(df_v)
         _, mid, _ = st.columns([1, 2, 1])
         with mid:
             st.dataframe(df_res, hide_index=True, use_container_width=True)
-            # Botón para descargar reporte de productos
             csv = df_res.to_csv(index=False).encode('utf-8')
             st.download_button("📥 Descargar Reporte (CSV)", csv, "productos_vendidos.csv", "text/csv", use_container_width=True)
     else: st.info("No hay ventas registradas en el turno actual.")
