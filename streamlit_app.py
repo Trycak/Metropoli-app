@@ -27,51 +27,47 @@ c.execute('CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, fecha TEXT
 c.execute('CREATE TABLE IF NOT EXISTS históricos_reportes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_caja REAL)')
 conn.commit()
 
-# --- ESTILOS VISUALES PERSONALIZADOS (REFORZADOS) ---
+# --- ESTILOS VISUALES PERSONALIZADOS ---
 st.markdown("""
     <style>
     .stApp { background-color: #134971 !important; }
-    
-    /* LOGO DE FONDO */
     .stApp::before {
         content: "";
         background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Logo%20Metropoli%20opacidad.png?raw=true");
         background-repeat: no-repeat; background-attachment: fixed; background-position: center; background-size: 600px;
         position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: -1;
     }
-
-    /* BOTONES DE PRODUCTOS: GRISES Y GRANDES */
+    [data-testid="stSidebar"] {
+        background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true");
+        background-size: cover;
+    }
+    [data-testid="stSidebar"] [data-testid="stVerticalBlock"] { padding-top: 0rem !important; gap: 0rem !important; }
+    [data-testid="stSidebar"] .stRadio > label { display: none !important; }
+    [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label {
+        background-color: rgba(255, 255, 255, 0.1) !important;
+        border-radius: 10px !important; padding: 10px 15px !important; 
+        margin-bottom: 6px !important; width: 100% !important;
+        border: 1px solid rgba(255,255,255,0.2) !important;
+    }
+    [data-testid="stSidebar"] .stRadio div[role="radiogroup"] label p {
+        color: white !important; font-weight: bold !important; font-size: 18px !important;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.8);
+    }
+    [data-testid="stSidebar"] [data-testid="stImage"] { padding-top: 10px !important; margin-top: -20px !important; }
     div.stButton > button[key^="p_"] {
-        background-color: #4A4A4A !important; 
-        color: white !important;
-        border-radius: 15px !important;
-        height: 150px !important; /* Altura aumentada */
-        width: 100% !important;
-        font-weight: bold !important;
-        font-size: 20px !important; /* Texto más legible */
-        border: 2px solid #777777 !important;
-        margin-bottom: 10px !important;
-        display: block !important;
-        transition: 0.3s;
+        background-color: #28a5a9 !important; color: white !important; border-radius: 12px !important;
+        height: 115px !important; width: 100% !important; font-weight: bold !important; font-size: 18px !important;
     }
-
-    div.stButton > button[key^="p_"]:hover {
-        background-color: #666666 !important;
-        border-color: #28a5a9 !important;
-    }
-
-    /* CARRITO Y TABLAS */
     .stDataEditor, .stDataFrame { background-color: #134971 !important; border-radius: 10px !important; }
     h1, h2, h3, p, span, label { color: white !important; text-align: center; }
     
-    /* CUADRO DE TOTAL */
+    /* Estilo para el Total Resaltado */
     .total-container {
-        background-color: rgba(40, 165, 169, 0.4);
-        padding: 20px;
-        border-radius: 12px;
-        border: 2px solid #28a5a9;
-        margin: 15px 0px;
-        text-align: center;
+        background-color: rgba(40, 165, 169, 0.3);
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #28a5a9;
+        margin: 10px 0px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -96,30 +92,27 @@ def to_csv(df):
 # --- BARRA LATERAL ---
 st.sidebar.image("https://github.com/Trycak/Metropoli-app/blob/main/Logo%20Metropoli.png?raw=true", use_container_width=True)
 menu = ["🛒 Ventas", "📦 Inventario", "📊 Productos Vendidos", "📝 Cuentas por Cobrar", "📋 Reportes"]
-choice = st.sidebar.radio("Navegación", menu, label_visibility="collapsed")
+choice = st.sidebar.radio("Nav", menu, label_visibility="collapsed")
 
 # --- SECCIONES ---
 if choice == "🛒 Ventas":
     if 'carrito' not in st.session_state: st.session_state.carrito = {}
     col_prods, col_cart = st.columns([2, 1])
-    
     with col_prods:
-        st.subheader("🛒 Productos (Orden A-Z)")
-        # ORDEN ALFABÉTICO REFORZADO AQUÍ
+        st.subheader("🛒 Productos Disponibles")
         prods = pd.read_sql_query("SELECT * FROM productos ORDER BY nombre ASC", conn)
         grid = st.columns(3)
         for i, row in prods.iterrows():
             with grid[i % 3]:
-                # Nombre en MAYÚSCULAS para mejor visibilidad
-                texto_boton = f"{row['nombre'].upper()}\nStock: {int(row['stock'])}\n₡{int(row['precio'])}"
-                if st.button(texto_boton, key=f"p_{row['id']}", disabled=row['stock']<=0):
+                texto_final = f"{row['nombre']} ({int(row['stock'])})\n₡{int(row['precio'])}"
+                if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock']<=0):
                     pid = str(row['id'])
                     if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
                     else: st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
                     st.rerun()
     
     with col_cart:
-        st.subheader("Carrito")
+        st.subheader("🛒 Carrito")
         if st.session_state.carrito:
             total_v = 0
             for pid, item in list(st.session_state.carrito.items()):
@@ -129,11 +122,11 @@ if choice == "🛒 Ventas":
                 c1.write(f"**{item['nombre']} x{item['cantidad']}** (₡{int(sub)})")
                 if c2.button("X", key=f"del_{pid}"): del st.session_state.carrito[pid]; st.rerun()
             
-            # TOTAL RESALTADO
+            # --- SECCIÓN DEL TOTAL (NUEVA) ---
             st.markdown(f"""
                 <div class="total-container">
-                    <p style="margin:0; font-size:18px;">MONTO A CANCELAR</p>
-                    <h1 style="margin:0; color: #ffffff; font-size:45px;">₡{int(total_v)}</h1>
+                    <h3 style="margin:0;">TOTAL A CANCELAR:</h3>
+                    <h1 style="margin:0; color: #28a5a9;">₡{int(total_v)}</h1>
                 </div>
             """, unsafe_allow_html=True)
             
@@ -155,7 +148,7 @@ if choice == "🛒 Ventas":
                     conn.commit(); st.session_state.carrito = {}; st.success("¡Venta Lista!"); st.rerun()
         else: st.info("El carrito está vacío")
 
-# --- (Resto de secciones: Inventario, Productos Vendidos, Créditos, Reportes se mantienen igual para no perder funciones) ---
+# --- (El resto del código se mantiene igual que tu versión madre) ---
 elif choice == "📦 Inventario":
     st.header("📦 Inventario")
     df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
