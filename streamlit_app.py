@@ -58,6 +58,21 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# --- FUNCIÓN DE CONTEO PARA PRODUCTOS VENDIDOS ---
+def obtener_conteo_productos(df):
+    conteo = {}
+    for detalle in df['detalle']:
+        partes = detalle.split(", ")
+        for p in partes:
+            if "(" in p and ")" in p:
+                try:
+                    nombre = p.split("(")[0]
+                    cantidad = int(p.split("(")[1].replace(")", ""))
+                    conteo[nombre] = conteo.get(nombre, 0) + cantidad
+                except: continue
+    if not conteo: return pd.DataFrame()
+    return pd.DataFrame(list(conteo.items()), columns=['Producto', 'Cantidad Vendida']).sort_values(by='Cantidad Vendida', ascending=False)
+
 # --- BARRA LATERAL ---
 st.sidebar.image("https://github.com/Trycak/Metropoli-app/blob/main/Logo%20Metropoli.png?raw=true", use_container_width=True)
 menu = ["🛒 Ventas", "📦 Inventario", "📊 Productos Vendidos", "📝 Cuentas por Cobrar", "📋 Reportes"]
@@ -67,7 +82,6 @@ choice = st.sidebar.radio("Nav", menu, label_visibility="collapsed")
 if choice == "🛒 Ventas":
     if 'carrito' not in st.session_state: st.session_state.carrito = {}
     col_prods, col_cart = st.columns([2, 1])
-    
     with col_prods:
         st.subheader("🛒 Productos Disponibles")
         prods = pd.read_sql_query("SELECT * FROM productos ORDER BY nombre ASC", conn)
@@ -80,7 +94,6 @@ if choice == "🛒 Ventas":
                     if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
                     else: st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
                     st.rerun()
-    
     with col_cart:
         st.subheader("🛒 Carrito")
         if st.session_state.carrito:
@@ -90,9 +103,7 @@ if choice == "🛒 Ventas":
                 c1, c2 = st.columns([5, 1])
                 c1.write(f"**{item['nombre']} x{item['cantidad']}** (₡{int(sub)})")
                 if c2.button("X", key=f"del_{pid}"): del st.session_state.carrito[pid]; st.rerun()
-            
             st.markdown(f"""<div class="total-carrito"><p style="margin:0; font-size:16px; color:#28a5a9;">MONTO A PAGAR</p><h1 style="margin:0; font-size:45px; color:white;">₡{int(total_v)}</h1></div>""", unsafe_allow_html=True)
-            
             st.divider()
             metodo = st.selectbox("Forma de Pago", ["Efectivo", "SINPE Móvil", "Crédito"])
             cliente_n = ""
@@ -100,7 +111,6 @@ if choice == "🛒 Ventas":
                 clientes_db = pd.read_sql_query("SELECT DISTINCT cliente FROM ventas WHERE metodo = 'Crédito' AND cliente != ''", conn)['cliente'].tolist()
                 opc = st.selectbox("Seleccionar Cliente", ["-- Nuevo --"] + clientes_db)
                 cliente_n = st.text_input("Nombre del Cliente") if opc == "-- Nuevo --" else opc
-            
             if st.button("✅ FINALIZAR VENTA", use_container_width=True):
                 if metodo == "Crédito" and not cliente_n: st.error("Falta nombre")
                 else:
@@ -123,11 +133,25 @@ elif choice == "📦 Inventario":
             else: c.execute("UPDATE productos SET nombre=?, precio=?, stock=? WHERE id=?", (r['nombre'], r['precio'], r['stock'], int(r['id'])))
         conn.commit(); st.rerun()
 
-# --- SECCIÓN 3: CUENTAS POR COBRAR (RESTAURADO) ---
+# --- SECCIÓN 3: PRODUCTOS VENDIDOS (RESTAURADO) ---
+elif choice == "📊 Productos Vendidos":
+    st.header("📊 Ranking de Productos Vendidos")
+    # Solo tomamos las ventas que aún no han sido cerradas en caja (periodo actual)
+    df_v = pd.read_sql_query("SELECT detalle FROM ventas WHERE reporte_id IS NULL", conn)
+    if not df_v.empty:
+        df_res = obtener_conteo_productos(df_v)
+        _, mid, _ = st.columns([1, 2, 1])
+        with mid:
+            st.dataframe(df_res, hide_index=True, use_container_width=True)
+            # Botón para descargar reporte de productos
+            csv = df_res.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Descargar Reporte (CSV)", csv, "productos_vendidos.csv", "text/csv", use_container_width=True)
+    else: st.info("No hay ventas registradas en el turno actual.")
+
+# --- SECCIÓN 4: CUENTAS POR COBRAR ---
 elif choice == "📝 Cuentas por Cobrar":
     st.header("📝 Gestión de Créditos")
     df_cc = pd.read_sql_query("SELECT cliente, SUM(total) as deuda FROM ventas WHERE metodo = 'Crédito' GROUP BY cliente", conn)
-    
     if not df_cc.empty:
         col_lista, col_detalle = st.columns([1, 2])
         with col_lista:
@@ -135,31 +159,22 @@ elif choice == "📝 Cuentas por Cobrar":
             cl_paga = st.selectbox("Seleccionar Cliente:", df_cc['cliente'].tolist())
             monto_resumen = df_cc[df_cc['cliente'] == cl_paga]['deuda'].values[0]
             st.markdown(f"<div class='info-caja'><h4>Total Deuda:<br>₡{int(monto_resumen)}</h4></div>", unsafe_allow_html=True)
-
         with col_detalle:
             st.subheader(f"Detalle: {cl_paga}")
             df_det = pd.read_sql_query("SELECT id, fecha, detalle, total FROM ventas WHERE cliente = ? AND metodo = 'Crédito'", conn, params=(cl_paga,))
             df_det['Borrar?'] = False
-            df_det_ed = st.data_editor(df_det, column_config={"id": None, "fecha": st.column_config.TextColumn("Fecha", disabled=True), "Borrar?": st.column_config.CheckboxColumn("¿Error?", default=False)}, hide_index=True, use_container_width=True)
-
-            c1, c2 = st.columns(2)
-            with c1:
-                if st.button("💾 Guardar Cambios", use_container_width=True):
-                    for _, row in df_det_ed.iterrows(): c.execute("UPDATE ventas SET detalle = ?, total = ? WHERE id = ?", (row['detalle'], row['total'], int(row['id'])))
-                    conn.commit(); st.success("Guardado"); st.rerun()
-            with c2:
-                if st.button("🗑️ Eliminar Seleccionadas", use_container_width=True):
-                    for _, row in df_det_ed[df_det_ed['Borrar?']].iterrows(): c.execute("DELETE FROM ventas WHERE id = ?", (int(row['id']),))
-                    conn.commit(); st.rerun()
-
+            df_det_ed = st.data_editor(df_det, column_config={"id": None, "Borrar?": st.column_config.CheckboxColumn("¿Error?", default=False)}, hide_index=True, use_container_width=True)
+            if st.button("🗑️ Eliminar Notas Seleccionadas", use_container_width=True):
+                for _, row in df_det_ed[df_det_ed['Borrar?']].iterrows(): c.execute("DELETE FROM ventas WHERE id = ?", (int(row['id']),))
+                conn.commit(); st.rerun()
             st.divider()
             metodo_p = st.selectbox("Recibir pago por:", ["Efectivo", "SINPE Móvil"])
             if st.button(f"Saldar Deuda Completa (₡{int(monto_resumen)})", use_container_width=True):
                 c.execute("UPDATE ventas SET metodo = ?, fecha = ? WHERE cliente = ? AND metodo = 'Crédito'", (metodo_p, f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Saldado)", cl_paga))
-                conn.commit(); st.success("Cuenta saldada"); st.rerun()
+                conn.commit(); st.rerun()
     else: st.info("No hay deudas.")
 
-# --- SECCIÓN 4: REPORTES (CIERRE FUNCIONAL) ---
+# --- SECCIÓN 5: REPORTES ---
 elif choice == "📋 Reportes":
     st.header("📋 Ventas del Periodo")
     df_p = pd.read_sql_query("SELECT id, fecha, total, metodo, detalle, cliente FROM ventas WHERE reporte_id IS NULL", conn)
@@ -170,5 +185,5 @@ elif choice == "📋 Reportes":
         if st.button("🔴 CERRAR CAJA", use_container_width=True):
             c.execute("INSERT INTO históricos_reportes (fecha_cierre, total_caja) VALUES (?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), t_caja))
             c.execute("UPDATE ventas SET reporte_id = (SELECT max(id) FROM históricos_reportes) WHERE reporte_id IS NULL")
-            conn.commit(); st.success("Caja Cerrada"); st.rerun()
+            conn.commit(); st.rerun()
     else: st.info("Sin ventas activas.")
