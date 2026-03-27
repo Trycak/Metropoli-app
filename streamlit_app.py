@@ -27,15 +27,13 @@ c.execute('CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, fecha TEXT
 c.execute('CREATE TABLE IF NOT EXISTS históricos_reportes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_caja REAL)')
 conn.commit()
 
-# --- ESTILOS VISUALES EVOLUCIONADOS ---
+# --- ESTILOS VISUALES ---
 st.markdown("""
     <style>
     .stApp { background-color: #134971 !important; }
     [data-testid="stSidebar"] { background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true"); background-size: cover; }
-    
     h1, h2, h3, p, span, label, .stMarkdown { color: white !important; text-align: center; }
     
-    /* BOTÓN ESTÁNDAR (CON STOCK) */
     div.stButton > button {
         -webkit-appearance: none !important;
         appearance: none !important;
@@ -52,21 +50,13 @@ st.markdown("""
         white-space: pre-line !important;
     }
 
-    /* BOTÓN SIN STOCK (AGOTADO) */
     div.stButton > button:disabled {
-        background-color: #000000 !important; /* FONDO NEGRO */
-        color: #444444 !important;           /* TEXTO GRIS OSCURO */
+        background-color: #000000 !important;
+        color: #444444 !important;
         border: 2px solid #333333 !important;
-        cursor: not-allowed !important;
-        opacity: 1 !important; /* Para que iOS no le baje la opacidad */
+        opacity: 1 !important;
     }
     
-    div.stButton > button:hover:not(:disabled) {
-        background-color: #e55a12 !important;
-        border-color: #000000 !important;
-        transform: scale(0.98);
-    }
-
     .total-carrito {
         background-color: rgba(255, 107, 29, 0.15);
         padding: 20px;
@@ -75,14 +65,20 @@ st.markdown("""
         margin: 15px 0px;
         text-align: center;
     }
+    .info-caja {
+        background-color: rgba(255, 255, 255, 0.1);
+        padding: 15px;
+        border-radius: 10px;
+        border: 1px solid #ff6b1d;
+        margin-bottom: 20px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-# --- (Funciones de conteo se mantienen igual) ---
 def obtener_conteo_productos(df):
     conteo = {}
     for detalle in df['detalle']:
-        partes = detalle.split(", ")
+        partes = str(detalle).split(", ")
         for p in partes:
             if "(" in p and ")" in p:
                 try:
@@ -91,36 +87,31 @@ def obtener_conteo_productos(df):
                     conteo[nombre] = conteo.get(nombre, 0) + cantidad
                 except: continue
     if not conteo: return pd.DataFrame()
-    return pd.DataFrame(list(conteo.items()), columns=['Producto', 'Cant.'], ).sort_values(by='Cant.', ascending=False)
+    return pd.DataFrame(list(conteo.items()), columns=['Producto', 'Cant.']).sort_values(by='Cant.', ascending=False)
 
 # --- MENÚ LATERAL ---
 st.sidebar.image("https://github.com/Trycak/Metropoli-app/blob/main/Logo%20Metropoli.png?raw=true", use_container_width=True)
 menu = ["🛒 Ventas", "📦 Inventario", "📊 Productos Vendidos", "📝 Cuentas por Cobrar", "📋 Reportes"]
 choice = st.sidebar.radio("Nav", menu, label_visibility="collapsed")
 
-# --- SECCIÓN VENTAS CON CAMBIO DE COLOR DINÁMICO ---
+# --- SECCIONES (VENTAS, INVENTARIO, PRODUCTOS VENDIDOS, CUENTAS POR COBRAR SE MANTIENEN IGUAL) ---
+
 if choice == "🛒 Ventas":
     if 'carrito' not in st.session_state: st.session_state.carrito = {}
     col_prods, col_cart = st.columns([2, 1])
-    
     with col_prods:
         st.subheader("🛒 Productos Disponibles")
         prods = pd.read_sql_query("SELECT * FROM productos ORDER BY nombre ASC", conn)
         grid = st.columns(3)
         for i, row in prods.iterrows():
             with grid[i % 3]:
-                # Si el stock es 0 o menor, el texto cambia a "AGOTADO"
                 label_stock = f"({int(row['stock'])})" if row['stock'] > 0 else "(AGOTADO)"
                 texto_final = f"{row['nombre']} {label_stock}\n₡{int(row['precio'])}"
-                
-                # El botón se deshabilita automáticamente si stock <= 0
-                # El CSS que pusimos arriba detecta el "disabled" y lo pone negro
                 if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock'] <= 0):
                     pid = str(row['id'])
                     if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
                     else: st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
                     st.rerun()
-    
     with col_cart:
         st.subheader("🛒 Carrito")
         if st.session_state.carrito:
@@ -130,9 +121,7 @@ if choice == "🛒 Ventas":
                 c1, c2 = st.columns([5, 1])
                 c1.write(f"**{item['nombre']} x{item['cantidad']}** (₡{int(sub)})")
                 if c2.button("X", key=f"del_{pid}"): del st.session_state.carrito[pid]; st.rerun()
-            
             st.markdown(f"""<div class="total-carrito"><p style="margin:0; font-size:16px; color:#ff6b1d;">MONTO A PAGAR</p><h1 style="margin:0; font-size:45px; color:white;">₡{int(total_v)}</h1></div>""", unsafe_allow_html=True)
-            
             st.divider()
             metodo = st.selectbox("Forma de Pago", ["Efectivo", "SINPE Móvil", "Crédito"])
             cliente_n = ""
@@ -140,7 +129,6 @@ if choice == "🛒 Ventas":
                 clientes_db = pd.read_sql_query("SELECT DISTINCT cliente FROM ventas WHERE metodo = 'Crédito' AND cliente != ''", conn)['cliente'].tolist()
                 opc = st.selectbox("Seleccionar Cliente", ["-- Nuevo --"] + clientes_db)
                 cliente_n = st.text_input("Nombre del Cliente") if opc == "-- Nuevo --" else opc
-            
             if st.button("✅ FINALIZAR VENTA", use_container_width=True):
                 if metodo == "Crédito" and not cliente_n: st.error("Falta nombre")
                 else:
@@ -151,7 +139,6 @@ if choice == "🛒 Ventas":
                     conn.commit(); st.session_state.carrito = {}; st.success("¡Venta Lista!"); st.rerun()
         else: st.info("El carrito está vacío")
 
-# --- (Las secciones de Inventario, Productos Vendidos, Deudores y Reportes se mantienen igual) ---
 elif choice == "📦 Inventario":
     st.header("📦 Gestión de Inventario")
     df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
@@ -210,15 +197,41 @@ elif choice == "📝 Cuentas por Cobrar":
                 conn.commit(); st.rerun()
     else: st.info("Sin deudas.")
 
+# --- SECCIÓN 5: REPORTES CON HISTÓRICO ---
 elif choice == "📋 Reportes":
-    st.header("📋 Ventas del Periodo")
-    df_p = pd.read_sql_query("SELECT id, fecha, total, metodo, detalle, cliente FROM ventas WHERE reporte_id IS NULL", conn)
-    if not df_p.empty:
-        st.dataframe(df_p, hide_index=True, use_container_width=True)
-        t_caja = df_p[df_p['metodo'] != 'Crédito']['total'].sum()
-        st.subheader(f"Dinero en Caja: ₡{int(t_caja)}")
-        if st.button("🔴 CERRAR CAJA", use_container_width=True):
-            c.execute("INSERT INTO históricos_reportes (fecha_cierre, total_caja) VALUES (?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), t_caja))
-            c.execute("UPDATE ventas SET reporte_id = (SELECT max(id) FROM históricos_reportes) WHERE reporte_id IS NULL")
-            conn.commit(); st.rerun()
-    else: st.info("Sin ventas activas.")
+    tab_actual, tab_historico = st.tabs(["🔴 Turno Actual", "💾 Historial de Cierres"])
+    
+    with tab_actual:
+        st.header("Ventas del Periodo Activo")
+        df_p = pd.read_sql_query("SELECT id, fecha, total, metodo, detalle, cliente FROM ventas WHERE reporte_id IS NULL", conn)
+        if not df_p.empty:
+            st.dataframe(df_p, hide_index=True, use_container_width=True)
+            t_caja = df_p[df_p['metodo'] != 'Crédito']['total'].sum()
+            st.subheader(f"Dinero en Caja: ₡{int(t_caja)}")
+            if st.button("🔴 CERRAR CAJA Y ARCHIVAR", use_container_width=True):
+                c.execute("INSERT INTO históricos_reportes (fecha_cierre, total_caja) VALUES (?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), t_caja))
+                c.execute("UPDATE ventas SET reporte_id = (SELECT max(id) FROM históricos_reportes) WHERE reporte_id IS NULL")
+                conn.commit(); st.success("Caja Cerrada y Guardada en el Historial"); st.rerun()
+        else: st.info("No hay ventas en el turno actual.")
+
+    with tab_historico:
+        st.header("Consulta de Cierres Pasados")
+        historicos = pd.read_sql_query("SELECT * FROM históricos_reportes ORDER BY id DESC", conn)
+        if not historicos.empty:
+            # Crear una lista legible para el selectbox
+            opciones_cierre = {f"ID: {r['id']} | Fecha: {r['fecha_cierre']} | Total: ₡{int(r['total_caja'])}": r['id'] for _, r in historicos.iterrows()}
+            seleccion = st.selectbox("Seleccione un cierre para ver detalle:", list(opciones_cierre.keys()))
+            id_cierre = opciones_cierre[seleccion]
+            
+            # Consultar ventas de ese reporte específico
+            df_hist = pd.read_sql_query("SELECT fecha, total, metodo, detalle, cliente FROM ventas WHERE reporte_id = ?", conn, params=(id_cierre,))
+            
+            st.markdown(f"<div class='info-caja'><h3>Reporte #{id_cierre}</h3></div>", unsafe_allow_html=True)
+            st.dataframe(df_hist, hide_index=True, use_container_width=True)
+            
+            # Mostrar ranking de productos de ese cierre específico
+            st.subheader("Ranking de Productos en este Cierre")
+            df_prod_hist = obtener_conteo_productos(df_hist)
+            st.dataframe(df_prod_hist, hide_index=True, use_container_width=True)
+        else:
+            st.info("Aún no hay reportes cerrados en el historial.")
