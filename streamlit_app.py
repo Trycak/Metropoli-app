@@ -87,7 +87,7 @@ def obtener_conteo_productos(df):
         for p in partes:
             if "(" in p and ")" in p:
                 try:
-                    nombre = p.split("(")[0]
+                    nombre = p.split("(")[0].strip()
                     cantidad = int(p.split("(")[1].replace(")", ""))
                     conteo[nombre] = conteo.get(nombre, 0) + cantidad
                 except: continue
@@ -167,10 +167,10 @@ elif choice == "📦 Inventario":
                     c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (n,p,s))
                     conn.commit(); st.rerun()
 
-# --- SECCIÓN 3: PRODUCTOS VENDIDOS (AJUSTE DE CONTEO) ---
+# --- SECCIÓN 3: PRODUCTOS VENDIDOS (CORREGIDO) ---
 elif choice == "📊 Productos Vendidos":
     st.header("📊 Ranking de Salida de Productos")
-    # Se consulta TODO lo que no tenga reporte_id (incluyendo Consumo Interno)
+    # Seleccionamos todos los registros del turno actual sin importar el método (Efectivo, SINPE, Crédito o Consumo)
     df_v = pd.read_sql_query("SELECT detalle FROM ventas WHERE reporte_id IS NULL", conn)
     if not df_v.empty:
         df_res = obtener_conteo_productos(df_v)
