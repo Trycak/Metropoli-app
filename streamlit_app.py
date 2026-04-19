@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime, timedelta, timezone
 import io
 import os
+import re # Nueva librería para limpieza de texto
 
 # --- FUNCIÓN PARA OBTENER HORA DE COSTA RICA ---
 def obtener_hora_cr():
@@ -54,14 +55,12 @@ st.markdown("""
         display: block !important;
         white-space: pre-line !important;
     }
-
     div.stButton > button:disabled {
         background-color: #000000 !important;
         color: #444444 !important;
         border: 2px solid #333333 !important;
         opacity: 1 !important;
     }
-    
     .total-carrito {
         background-color: rgba(255, 107, 29, 0.15);
         padding: 20px;
@@ -80,19 +79,27 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
+# --- FUNCIÓN DE CONTEO MEJORADA ---
 def obtener_conteo_productos(df):
     conteo = {}
-    for detalle in df['detalle']:
-        partes = str(detalle).split(", ")
-        for p in partes:
-            if "(" in p and ")" in p:
-                try:
-                    nombre = p.split("(")[0].strip()
-                    cantidad = int(p.split("(")[1].replace(")", ""))
-                    conteo[nombre] = conteo.get(nombre, 0) + cantidad
-                except: continue
+    if df.empty: return pd.DataFrame()
+    
+    for detalle in df['detalle'].dropna():
+        # Separamos por coma los productos del string
+        items = detalle.split(",")
+        for item in items:
+            # Buscamos el patrón "Nombre del Producto(Cantidad)"
+            match = re.search(r"(.+)\((\d+)\)", item)
+            if match:
+                nombre = match.group(1).strip() # Limpia espacios accidentales
+                cantidad = int(match.group(2))
+                conteo[nombre] = conteo.get(nombre, 0) + cantidad
+                
     if not conteo: return pd.DataFrame()
-    return pd.DataFrame(list(conteo.items()), columns=['Producto', 'Cant.']).sort_values(by='Cant.', ascending=False)
+    
+    # Crear DataFrame y ordenar de mayor a menor
+    df_resultado = pd.DataFrame(list(conteo.items()), columns=['Producto', 'Cant.'])
+    return df_resultado.sort_values(by='Cant.', ascending=False)
 
 # --- MENÚ LATERAL ---
 st.sidebar.image("https://github.com/Trycak/Metropoli-app/blob/main/Logo%20Metropoli.png?raw=true", use_container_width=True)
@@ -167,14 +174,16 @@ elif choice == "📦 Inventario":
                     c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (n,p,s))
                     conn.commit(); st.rerun()
 
-# --- SECCIÓN 3: PRODUCTOS VENDIDOS (CORREGIDO) ---
+# --- SECCIÓN 3: PRODUCTOS VENDIDOS (CORREGIDO CON RE) ---
 elif choice == "📊 Productos Vendidos":
     st.header("📊 Ranking de Salida de Productos")
-    # Seleccionamos todos los registros del turno actual sin importar el método (Efectivo, SINPE, Crédito o Consumo)
+    # Captura todo lo que no tiene cierre de caja (incluyendo Créditos y Consumos)
     df_v = pd.read_sql_query("SELECT detalle FROM ventas WHERE reporte_id IS NULL", conn)
     if not df_v.empty:
         df_res = obtener_conteo_productos(df_v)
-        st.dataframe(df_res, hide_index=True, use_container_width=True)
+        if not df_res.empty:
+            st.dataframe(df_res, hide_index=True, use_container_width=True)
+        else: st.warning("Los datos registrados no tienen el formato correcto para el conteo.")
     else: st.info("No hay movimiento de productos en este turno.")
 
 # --- SECCIÓN 4: CUENTAS POR COBRAR ---
