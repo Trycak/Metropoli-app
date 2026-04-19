@@ -1,15 +1,9 @@
 import streamlit as st
 import sqlite3
 import pandas as pd
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 import io
 import os
-import re # Nueva librería para limpieza de texto
-
-# --- FUNCIÓN PARA OBTENER HORA DE COSTA RICA ---
-def obtener_hora_cr():
-    tz_cr = timezone(timedelta(hours=-6))
-    return datetime.now(tz_cr).strftime("%Y-%m-%d %H:%M")
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Metropoli Cafe", page_icon="🏀", layout="wide")
@@ -55,12 +49,14 @@ st.markdown("""
         display: block !important;
         white-space: pre-line !important;
     }
+
     div.stButton > button:disabled {
         background-color: #000000 !important;
         color: #444444 !important;
         border: 2px solid #333333 !important;
         opacity: 1 !important;
     }
+    
     .total-carrito {
         background-color: rgba(255, 107, 29, 0.15);
         padding: 20px;
@@ -79,34 +75,27 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNCIÓN DE CONTEO MEJORADA ---
 def obtener_conteo_productos(df):
     conteo = {}
-    if df.empty: return pd.DataFrame()
-    
-    for detalle in df['detalle'].dropna():
-        # Separamos por coma los productos del string
-        items = detalle.split(",")
-        for item in items:
-            # Buscamos el patrón "Nombre del Producto(Cantidad)"
-            match = re.search(r"(.+)\((\d+)\)", item)
-            if match:
-                nombre = match.group(1).strip() # Limpia espacios accidentales
-                cantidad = int(match.group(2))
-                conteo[nombre] = conteo.get(nombre, 0) + cantidad
-                
+    for detalle in df['detalle']:
+        partes = str(detalle).split(", ")
+        for p in partes:
+            if "(" in p and ")" in p:
+                try:
+                    nombre = p.split("(")[0]
+                    cantidad = int(p.split("(")[1].replace(")", ""))
+                    conteo[nombre] = conteo.get(nombre, 0) + cantidad
+                except: continue
     if not conteo: return pd.DataFrame()
-    
-    # Crear DataFrame y ordenar de mayor a menor
-    df_resultado = pd.DataFrame(list(conteo.items()), columns=['Producto', 'Cant.'])
-    return df_resultado.sort_values(by='Cant.', ascending=False)
+    return pd.DataFrame(list(conteo.items()), columns=['Producto', 'Cant.']).sort_values(by='Cant.', ascending=False)
 
 # --- MENÚ LATERAL ---
 st.sidebar.image("https://github.com/Trycak/Metropoli-app/blob/main/Logo%20Metropoli.png?raw=true", use_container_width=True)
 menu = ["🛒 Ventas", "📦 Inventario", "📊 Productos Vendidos", "📝 Cuentas por Cobrar", "📋 Reportes"]
 choice = st.sidebar.radio("Nav", menu, label_visibility="collapsed")
 
-# --- SECCIÓN 1: VENTAS ---
+# --- SECCIONES (VENTAS, INVENTARIO, PRODUCTOS VENDIDOS, CUENTAS POR COBRAR SE MANTIENEN IGUAL) ---
+
 if choice == "🛒 Ventas":
     if 'carrito' not in st.session_state: st.session_state.carrito = {}
     col_prods, col_cart = st.columns([2, 1])
@@ -144,13 +133,12 @@ if choice == "🛒 Ventas":
                 if metodo == "Crédito" and not cliente_n: st.error("Falta nombre")
                 else:
                     det = ", ".join([f"{v['nombre']}({v['cantidad']})" for v in st.session_state.carrito.values()])
-                    c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente) VALUES (?,?,?,?,?)", (obtener_hora_cr(), total_v, metodo, det, cliente_n))
+                    c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente) VALUES (?,?,?,?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), total_v, metodo, det, cliente_n))
                     for pid, item in st.session_state.carrito.items():
                         c.execute("UPDATE productos SET stock = stock - ? WHERE id = ?", (item['cantidad'], int(pid)))
                     conn.commit(); st.session_state.carrito = {}; st.success("¡Venta Lista!"); st.rerun()
         else: st.info("El carrito está vacío")
 
-# --- SECCIÓN 2: INVENTARIO ---
 elif choice == "📦 Inventario":
     st.header("📦 Gestión de Inventario")
     df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
@@ -174,19 +162,14 @@ elif choice == "📦 Inventario":
                     c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (n,p,s))
                     conn.commit(); st.rerun()
 
-# --- SECCIÓN 3: PRODUCTOS VENDIDOS (CORREGIDO CON RE) ---
 elif choice == "📊 Productos Vendidos":
-    st.header("📊 Ranking de Salida de Productos")
-    # Captura todo lo que no tiene cierre de caja (incluyendo Créditos y Consumos)
+    st.header("📊 Ranking de Productos Vendidos")
     df_v = pd.read_sql_query("SELECT detalle FROM ventas WHERE reporte_id IS NULL", conn)
     if not df_v.empty:
         df_res = obtener_conteo_productos(df_v)
-        if not df_res.empty:
-            st.dataframe(df_res, hide_index=True, use_container_width=True)
-        else: st.warning("Los datos registrados no tienen el formato correcto para el conteo.")
-    else: st.info("No hay movimiento de productos en este turno.")
+        st.dataframe(df_res, hide_index=True, use_container_width=True)
+    else: st.info("No hay ventas en este turno.")
 
-# --- SECCIÓN 4: CUENTAS POR COBRAR ---
 elif choice == "📝 Cuentas por Cobrar":
     st.header("📝 Gestión de Créditos")
     df_cc = pd.read_sql_query("SELECT cliente, SUM(total) as deuda FROM ventas WHERE metodo = 'Crédito' GROUP BY cliente", conn)
@@ -208,40 +191,47 @@ elif choice == "📝 Cuentas por Cobrar":
                 for _, row in df_det_ed[df_det_ed['Borrar?']].iterrows(): c.execute("DELETE FROM ventas WHERE id = ?", (int(row['id']),))
                 conn.commit(); st.rerun()
             st.divider()
-            st.subheader("Finalizar Deuda")
-            metodo_p = st.selectbox("Pago por:", ["Efectivo", "SINPE Móvil", "Consumo Interno"])
-            btn_text = f"Saldar Deuda (₡{int(monto_resumen)})" if metodo_p != "Consumo Interno" else "Registrar como Consumo Interno"
-            if st.button(btn_text, use_container_width=True):
-                c.execute("UPDATE ventas SET metodo = ?, fecha = ? WHERE cliente = ? AND metodo = 'Crédito'", (metodo_p, f"{obtener_hora_cr()} ({metodo_p})", cl_paga))
-                conn.commit(); st.success(f"Deuda de {cl_paga} procesada."); st.rerun()
-    else: st.info("Sin deudas pendientes.")
+            metodo_p = st.selectbox("Pago por:", ["Efectivo", "SINPE Móvil"])
+            if st.button(f"Saldar Deuda (₡{int(monto_resumen)})", use_container_width=True):
+                c.execute("UPDATE ventas SET metodo = ?, fecha = ? WHERE cliente = ? AND metodo = 'Crédito'", (metodo_p, f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Saldado)", cl_paga))
+                conn.commit(); st.rerun()
+    else: st.info("Sin deudas.")
 
-# --- SECCIÓN 5: REPORTES ---
+# --- SECCIÓN 5: REPORTES CON HISTÓRICO ---
 elif choice == "📋 Reportes":
     tab_actual, tab_historico = st.tabs(["🔴 Turno Actual", "💾 Historial de Cierres"])
+    
     with tab_actual:
         st.header("Ventas del Periodo Activo")
         df_p = pd.read_sql_query("SELECT id, fecha, total, metodo, detalle, cliente FROM ventas WHERE reporte_id IS NULL", conn)
         if not df_p.empty:
             st.dataframe(df_p, hide_index=True, use_container_width=True)
-            t_caja = df_p[df_p['metodo'].isin(['Efectivo', 'SINPE Móvil'])]['total'].sum()
-            st.subheader(f"Dinero en Caja Real: ₡{int(t_caja)}")
+            t_caja = df_p[df_p['metodo'] != 'Crédito']['total'].sum()
+            st.subheader(f"Dinero en Caja: ₡{int(t_caja)}")
             if st.button("🔴 CERRAR CAJA Y ARCHIVAR", use_container_width=True):
-                c.execute("INSERT INTO históricos_reportes (fecha_cierre, total_caja) VALUES (?,?)", (obtener_hora_cr(), t_caja))
+                c.execute("INSERT INTO históricos_reportes (fecha_cierre, total_caja) VALUES (?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), t_caja))
                 c.execute("UPDATE ventas SET reporte_id = (SELECT max(id) FROM históricos_reportes) WHERE reporte_id IS NULL")
-                conn.commit(); st.success("Caja Cerrada"); st.rerun()
+                conn.commit(); st.success("Caja Cerrada y Guardada en el Historial"); st.rerun()
         else: st.info("No hay ventas en el turno actual.")
+
     with tab_historico:
         st.header("Consulta de Cierres Pasados")
         historicos = pd.read_sql_query("SELECT * FROM históricos_reportes ORDER BY id DESC", conn)
         if not historicos.empty:
-            opciones_cierre = {f"ID: {r['id']} | Fecha: {r['fecha_cierre']} | Total Caja: ₡{int(r['total_caja'])}": r['id'] for _, r in historicos.iterrows()}
-            seleccion = st.selectbox("Seleccione un cierre:", list(opciones_cierre.keys()))
+            # Crear una lista legible para el selectbox
+            opciones_cierre = {f"ID: {r['id']} | Fecha: {r['fecha_cierre']} | Total: ₡{int(r['total_caja'])}": r['id'] for _, r in historicos.iterrows()}
+            seleccion = st.selectbox("Seleccione un cierre para ver detalle:", list(opciones_cierre.keys()))
             id_cierre = opciones_cierre[seleccion]
+            
+            # Consultar ventas de ese reporte específico
             df_hist = pd.read_sql_query("SELECT fecha, total, metodo, detalle, cliente FROM ventas WHERE reporte_id = ?", conn, params=(id_cierre,))
+            
             st.markdown(f"<div class='info-caja'><h3>Reporte #{id_cierre}</h3></div>", unsafe_allow_html=True)
             st.dataframe(df_hist, hide_index=True, use_container_width=True)
+            
+            # Mostrar ranking de productos de ese cierre específico
             st.subheader("Ranking de Productos en este Cierre")
             df_prod_hist = obtener_conteo_productos(df_hist)
             st.dataframe(df_prod_hist, hide_index=True, use_container_width=True)
-        else: st.info("No hay reportes históricos.")
+        else:
+            st.info("Aún no hay reportes cerrados en el historial.")
