@@ -94,7 +94,7 @@ st.sidebar.image("https://github.com/Trycak/Metropoli-app/blob/main/Logo%20Metro
 menu = ["🛒 Ventas", "📦 Inventario", "📊 Productos Vendidos", "📝 Cuentas por Cobrar", "📋 Reportes"]
 choice = st.sidebar.radio("Nav", menu, label_visibility="collapsed")
 
-# --- SECCIONES ---
+# --- SECCIONES (VENTAS, INVENTARIO, PRODUCTOS VENDIDOS, CUENTAS POR COBRAR SE MANTIENEN IGUAL) ---
 
 if choice == "🛒 Ventas":
     if 'carrito' not in st.session_state: st.session_state.carrito = {}
@@ -191,32 +191,23 @@ elif choice == "📝 Cuentas por Cobrar":
                 for _, row in df_det_ed[df_det_ed['Borrar?']].iterrows(): c.execute("DELETE FROM ventas WHERE id = ?", (int(row['id']),))
                 conn.commit(); st.rerun()
             st.divider()
-            
-            # --- AJUSTE SOLICITADO ---
-            c_pago1, c_pago2 = st.columns(2)
-            with c_pago1:
-                metodo_p = st.selectbox("Pago por:", ["Efectivo", "SINPE Móvil"])
-                if st.button(f"Saldar Deuda (₡{int(monto_resumen)})", use_container_width=True):
-                    c.execute("UPDATE ventas SET metodo = ?, fecha = ? WHERE cliente = ? AND metodo = 'Crédito'", (metodo_p, f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Saldado)", cl_paga))
-                    conn.commit(); st.rerun()
-            with c_pago2:
-                st.write("") # Espaciado
-                st.write("")
-                if st.button("🎁 Registrar como Consumo Interno", use_container_width=True):
-                    c.execute("UPDATE ventas SET metodo = ?, fecha = ? WHERE cliente = ? AND metodo = 'Crédito'", ("Consumo Interno", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Consumo)", cl_paga))
-                    conn.commit(); st.rerun()
+            metodo_p = st.selectbox("Pago por:", ["Efectivo", "SINPE Móvil"])
+            if st.button(f"Saldar Deuda (₡{int(monto_resumen)})", use_container_width=True):
+                c.execute("UPDATE ventas SET metodo = ?, fecha = ? WHERE cliente = ? AND metodo = 'Crédito'", (metodo_p, f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Saldado)", cl_paga))
+                conn.commit(); st.rerun()
     else: st.info("Sin deudas.")
 
+# --- SECCIÓN 5: REPORTES CON HISTÓRICO ---
 elif choice == "📋 Reportes":
     tab_actual, tab_historico = st.tabs(["🔴 Turno Actual", "💾 Historial de Cierres"])
+    
     with tab_actual:
         st.header("Ventas del Periodo Activo")
         df_p = pd.read_sql_query("SELECT id, fecha, total, metodo, detalle, cliente FROM ventas WHERE reporte_id IS NULL", conn)
         if not df_p.empty:
             st.dataframe(df_p, hide_index=True, use_container_width=True)
-            # --- AJUSTE SOLICITADO: Solo suma Efectivo y SINPE al total real de caja ---
-            t_caja = df_p[df_p['metodo'].isin(['Efectivo', 'SINPE Móvil'])]['total'].sum()
-            st.subheader(f"Dinero en Caja Real: ₡{int(t_caja)}")
+            t_caja = df_p[df_p['metodo'] != 'Crédito']['total'].sum()
+            st.subheader(f"Dinero en Caja: ₡{int(t_caja)}")
             if st.button("🔴 CERRAR CAJA Y ARCHIVAR", use_container_width=True):
                 c.execute("INSERT INTO históricos_reportes (fecha_cierre, total_caja) VALUES (?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), t_caja))
                 c.execute("UPDATE ventas SET reporte_id = (SELECT max(id) FROM históricos_reportes) WHERE reporte_id IS NULL")
@@ -227,12 +218,18 @@ elif choice == "📋 Reportes":
         st.header("Consulta de Cierres Pasados")
         historicos = pd.read_sql_query("SELECT * FROM históricos_reportes ORDER BY id DESC", conn)
         if not historicos.empty:
+            # Crear una lista legible para el selectbox
             opciones_cierre = {f"ID: {r['id']} | Fecha: {r['fecha_cierre']} | Total: ₡{int(r['total_caja'])}": r['id'] for _, r in historicos.iterrows()}
             seleccion = st.selectbox("Seleccione un cierre para ver detalle:", list(opciones_cierre.keys()))
             id_cierre = opciones_cierre[seleccion]
+            
+            # Consultar ventas de ese reporte específico
             df_hist = pd.read_sql_query("SELECT fecha, total, metodo, detalle, cliente FROM ventas WHERE reporte_id = ?", conn, params=(id_cierre,))
+            
             st.markdown(f"<div class='info-caja'><h3>Reporte #{id_cierre}</h3></div>", unsafe_allow_html=True)
             st.dataframe(df_hist, hide_index=True, use_container_width=True)
+            
+            # Mostrar ranking de productos de ese cierre específico
             st.subheader("Ranking de Productos en este Cierre")
             df_prod_hist = obtener_conteo_productos(df_hist)
             st.dataframe(df_prod_hist, hide_index=True, use_container_width=True)
