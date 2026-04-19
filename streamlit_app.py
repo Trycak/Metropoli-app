@@ -133,7 +133,6 @@ if choice == "🛒 Ventas":
                 clientes_db = pd.read_sql_query("SELECT DISTINCT cliente FROM ventas WHERE metodo = 'Crédito' AND cliente != ''", conn)['cliente'].tolist()
                 opc = st.selectbox("Seleccionar Cliente", ["-- Nuevo --"] + clientes_db)
                 cliente_n = st.text_input("Nombre del Cliente") if opc == "-- Nuevo --" else opc
-            
             if st.button("✅ FINALIZAR VENTA", use_container_width=True):
                 if metodo == "Crédito" and not cliente_n: st.error("Falta nombre")
                 else:
@@ -168,18 +167,17 @@ elif choice == "📦 Inventario":
                     c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (n,p,s))
                     conn.commit(); st.rerun()
 
-# --- SECCIÓN 3: PRODUCTOS VENDIDOS ---
+# --- SECCIÓN 3: PRODUCTOS VENDIDOS (AJUSTE DE CONTEO) ---
 elif choice == "📊 Productos Vendidos":
-    st.header("📊 Ranking de Productos Vendidos")
-    # Solo muestra lo que NO es consumo interno para el ranking de ventas reales si se desea, 
-    # o todo para ver movimiento de stock. Aquí muestra todo lo del turno actual.
+    st.header("📊 Ranking de Salida de Productos")
+    # Se consulta TODO lo que no tenga reporte_id (incluyendo Consumo Interno)
     df_v = pd.read_sql_query("SELECT detalle FROM ventas WHERE reporte_id IS NULL", conn)
     if not df_v.empty:
         df_res = obtener_conteo_productos(df_v)
         st.dataframe(df_res, hide_index=True, use_container_width=True)
-    else: st.info("No hay ventas en este turno.")
+    else: st.info("No hay movimiento de productos en este turno.")
 
-# --- SECCIÓN 4: CUENTAS POR COBRAR (CON FUNCIÓN CONSUMO INTERNO) ---
+# --- SECCIÓN 4: CUENTAS POR COBRAR ---
 elif choice == "📝 Cuentas por Cobrar":
     st.header("📝 Gestión de Créditos")
     df_cc = pd.read_sql_query("SELECT cliente, SUM(total) as deuda FROM ventas WHERE metodo = 'Crédito' GROUP BY cliente", conn)
@@ -193,7 +191,6 @@ elif choice == "📝 Cuentas por Cobrar":
             df_det = pd.read_sql_query("SELECT id, fecha, detalle, total FROM ventas WHERE cliente = ? AND metodo = 'Crédito'", conn, params=(cl_paga,))
             df_det['Borrar?'] = False
             df_det_ed = st.data_editor(df_det, column_config={"id": None}, hide_index=True, use_container_width=True)
-            
             c_c1, c_c2 = st.columns(2)
             if c_c1.button("💾 Guardar Cambios", use_container_width=True):
                 for _, r in df_det_ed.iterrows(): c.execute("UPDATE ventas SET detalle=?, total=? WHERE id=?", (r['detalle'], r['total'], int(r['id'])))
@@ -201,16 +198,12 @@ elif choice == "📝 Cuentas por Cobrar":
             if c_c2.button("🗑️ Eliminar Notas", use_container_width=True):
                 for _, row in df_det_ed[df_det_ed['Borrar?']].iterrows(): c.execute("DELETE FROM ventas WHERE id = ?", (int(row['id']),))
                 conn.commit(); st.rerun()
-            
             st.divider()
             st.subheader("Finalizar Deuda")
             metodo_p = st.selectbox("Pago por:", ["Efectivo", "SINPE Móvil", "Consumo Interno"])
-            
             btn_text = f"Saldar Deuda (₡{int(monto_resumen)})" if metodo_p != "Consumo Interno" else "Registrar como Consumo Interno"
             if st.button(btn_text, use_container_width=True):
-                # Si es Consumo Interno, el monto total de esa venta pasa a ser irrelevante para la caja
-                c.execute("UPDATE ventas SET metodo = ?, fecha = ? WHERE cliente = ? AND metodo = 'Crédito'", 
-                         (metodo_p, f"{obtener_hora_cr()} ({metodo_p})", cl_paga))
+                c.execute("UPDATE ventas SET metodo = ?, fecha = ? WHERE cliente = ? AND metodo = 'Crédito'", (metodo_p, f"{obtener_hora_cr()} ({metodo_p})", cl_paga))
                 conn.commit(); st.success(f"Deuda de {cl_paga} procesada."); st.rerun()
     else: st.info("Sin deudas pendientes.")
 
@@ -219,20 +212,16 @@ elif choice == "📋 Reportes":
     tab_actual, tab_historico = st.tabs(["🔴 Turno Actual", "💾 Historial de Cierres"])
     with tab_actual:
         st.header("Ventas del Periodo Activo")
-        # Filtramos para que NO sume al total de caja los Consumos Internos
         df_p = pd.read_sql_query("SELECT id, fecha, total, metodo, detalle, cliente FROM ventas WHERE reporte_id IS NULL", conn)
         if not df_p.empty:
             st.dataframe(df_p, hide_index=True, use_container_width=True)
-            # EXCLUSIÓN: Solo suma Efectivo y SINPE al total de caja real
             t_caja = df_p[df_p['metodo'].isin(['Efectivo', 'SINPE Móvil'])]['total'].sum()
             st.subheader(f"Dinero en Caja Real: ₡{int(t_caja)}")
-            
             if st.button("🔴 CERRAR CAJA Y ARCHIVAR", use_container_width=True):
                 c.execute("INSERT INTO históricos_reportes (fecha_cierre, total_caja) VALUES (?,?)", (obtener_hora_cr(), t_caja))
                 c.execute("UPDATE ventas SET reporte_id = (SELECT max(id) FROM históricos_reportes) WHERE reporte_id IS NULL")
                 conn.commit(); st.success("Caja Cerrada"); st.rerun()
         else: st.info("No hay ventas en el turno actual.")
-
     with tab_historico:
         st.header("Consulta de Cierres Pasados")
         historicos = pd.read_sql_query("SELECT * FROM históricos_reportes ORDER BY id DESC", conn)
