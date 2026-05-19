@@ -4,7 +4,6 @@ import pandas as pd
 from datetime import datetime
 import io
 import os
-import re
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Metropoli Cafe", page_icon="🏀", layout="wide")
@@ -91,7 +90,7 @@ def obtener_conteo_productos(df):
     return pd.DataFrame(list(conteo.items()), columns=['Producto', 'Cant.']).sort_values(by='Cant.', ascending=False)
 
 def unificar_detalles_texto(lista_detalles):
-    """Función auxiliar para consolidar múltiples strings de detalle en uno solo limpio"""
+    """Consolida múltiples strings de detalle en uno solo limpio y acumulado"""
     conteo = {}
     for detalle in lista_detalles:
         partes = str(detalle).split(", ")
@@ -100,7 +99,6 @@ def unificar_detalles_texto(lista_detalles):
                 try:
                     nombre = p.split("(")[0].strip()
                     cantidad = int(p.split("(")[1].replace(")", ""))
-                    conteo[nombre] = conteo.get(nombre, 0) + quantity
                     conteo[nombre] = conteo.get(nombre, 0) + cantidad
                 except: continue
     return ", ".join([f"{prod}({cant})" for prod, cant in conteo.items()])
@@ -239,15 +237,14 @@ elif choice == "📝 Cuentas por Cobrar":
                     st.session_state.confirmar_pago = False
                     st.rerun()
                 if cc2.button("✅ SÍ, CONFIRMAR PAGO", key="btn_si_pago", use_container_width=True):
-                    # CAMBIO CRÍTICO: Recolectar y unificar todas las notas abiertas de este cliente
                     lista_detalles_viejos = df_det['detalle'].tolist()
                     detalle_unificado = unificar_detalles_texto(lista_detalles_viejos)
                     
-                    # 1. Insertar la nueva fila consolidada y limpia en el turno activo (reporte_id = NULL)
+                    # 1. Insertar la nueva fila consolidada en el turno activo (reporte_id = NULL) con el detalle unificado corregido
                     c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente, reporte_id) VALUES (?, ?, ?, ?, ?, NULL)",
                               (f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Saldado)", monto_resumen, metodo_p, detalle_unificado, cl_paga))
                     
-                    # 2. Archivar permanentemente las notas individuales viejas con reporte_id = -2 para que no estorben
+                    # 2. Archivar permanentemente las notas individuales viejas (reporte_id = -2)
                     c.execute("UPDATE ventas SET reporte_id = -2 WHERE cliente = ? AND metodo = 'Crédito' AND reporte_id = -1", (cl_paga,))
                     
                     conn.commit()
@@ -262,7 +259,6 @@ elif choice == "📝 Cuentas por Cobrar":
                     st.session_state.confirmar_consumo = False
                     st.rerun()
                 if cc4.button("✅ SÍ, CONFIRMAR CONSUMO", key="btn_si_consumo", use_container_width=True):
-                    # CAMBIO: Consolidar también para el registro de consumo interno y sacarlo de circulación
                     lista_detalles_viejos = df_det['detalle'].tolist()
                     detalle_unificado = unificar_detalles_texto(lista_detalles_viejos)
                     
