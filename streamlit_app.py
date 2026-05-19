@@ -4,6 +4,7 @@ import pandas as pd
 from datetime import datetime
 import io
 import os
+import re
 
 # 1. Configuración de la página
 st.set_page_config(page_title="Metropoli Cafe", page_icon="🏀", layout="wide")
@@ -82,12 +83,27 @@ def obtener_conteo_productos(df):
         for p in partes:
             if "(" in p and ")" in p:
                 try:
-                    nombre = p.split("(")[0]
+                    nombre = p.split("(")[0].strip()
                     cantidad = int(p.split("(")[1].replace(")", ""))
                     conteo[nombre] = conteo.get(nombre, 0) + cantidad
                 except: continue
     if not conteo: return pd.DataFrame()
     return pd.DataFrame(list(conteo.items()), columns=['Producto', 'Cant.']).sort_values(by='Cant.', ascending=False)
+
+def unificar_detalles_texto(lista_detalles):
+    """Función auxiliar para consolidar múltiples strings de detalle en uno solo limpio"""
+    conteo = {}
+    for detalle in lista_detalles:
+        partes = str(detalle).split(", ")
+        for p in partes:
+            if "(" in p and ")" in p:
+                try:
+                    nombre = p.split("(")[0].strip()
+                    cantidad = int(p.split("(")[1].replace(")", ""))
+                    conteo[nombre] = conteo.get(nombre, 0) + quantity
+                    conteo[nombre] = conteo.get(nombre, 0) + cantidad
+                except: continue
+    return ", ".join([f"{prod}({cant})" for prod, cant in conteo.items()])
 
 # --- MENÚ LATERAL ---
 st.sidebar.image("https://github.com/Trycak/Metropoli-app/blob/main/Logo%20Metropoli.png?raw=true", use_container_width=True)
@@ -126,14 +142,13 @@ if choice == "🛒 Ventas":
             metodo = st.selectbox("Forma de Pago", ["Efectivo", "SINPE Móvil", "Crédito"])
             cliente_n = ""
             if metodo == "Crédito":
-                clientes_db = pd.read_sql_query("SELECT DISTINCT cliente FROM ventas WHERE metodo = 'Crédito' AND cliente != ''", conn)['cliente'].tolist()
+                clientes_db = pd.read_sql_query("SELECT DISTINCT cliente FROM ventas WHERE metodo = 'Crédito' AND reporte_id = -1 AND cliente != ''", conn)['cliente'].tolist()
                 opc = st.selectbox("Seleccionar Cliente", ["-- Nuevo --"] + clientes_db)
                 cliente_n = st.text_input("Nombre del Cliente") if opc == "-- Nuevo --" else opc
             if st.button("✅ FINALIZAR VENTA", use_container_width=True):
                 if metodo == "Crédito" and not cliente_n: st.error("Falta nombre")
                 else:
                     det = ", ".join([f"{v['nombre']}({v['cantidad']})" for v in st.session_state.carrito.values()])
-                    # CAMBIO: Si es crédito, nace con reporte_id = -1 para ocultarlo de los reportes del turno actual
                     rep_id_inicial = -1 if metodo == "Crédito" else None
                     c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente, reporte_id) VALUES (?,?,?,?,?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), total_v, metodo, det, cliente_n, rep_id_inicial))
                     for pid, item in st.session_state.carrito.items():
@@ -174,7 +189,6 @@ elif choice == "📊 Productos Vendidos":
 
 elif choice == "📝 Cuentas por Cobrar":
     st.header("📝 Gestión de Créditos")
-    # CAMBIO: Filtramos por metodo='Crédito' y reporte_id=-1 para mostrar solo las pendientes
     df_cc = pd.read_sql_query("SELECT cliente, SUM(total) as deuda FROM ventas WHERE metodo = 'Crédito' AND reporte_id = -1 GROUP BY cliente", conn)
     if not df_cc.empty:
         col_lista, col_detalle = st.columns([1, 2])
@@ -192,7 +206,7 @@ elif choice == "📝 Cuentas por Cobrar":
                 conn.commit(); st.rerun()
             if c_c2.button("🗑️ Eliminar Notas", use_container_width=True):
                 for _, row in df_det_ed[df_det_ed['Borrar?']].iterrows(): c.execute("DELETE FROM ventas WHERE id = ?", (int(row['id']),))
-                conn.commit(); st.rerun()
+                conn.commit(); r.rerun()
             st.divider()
             
             if 'confirmar_pago' not in st.session_state: st.session_state.confirmar_pago = False
@@ -225,11 +239,20 @@ elif choice == "📝 Cuentas por Cobrar":
                     st.session_state.confirmar_pago = False
                     st.rerun()
                 if cc2.button("✅ SÍ, CONFIRMAR PAGO", key="btn_si_pago", use_container_width=True):
-                    # CAMBIO: Al pagar, ponemos reporte_id = NULL para que aparezca en el turno activo con su nuevo método de pago
-                    c.execute("UPDATE ventas SET metodo = ?, fecha = ?, reporte_id = NULL WHERE cliente = ? AND metodo = 'Crédito' AND reporte_id = -1", (metodo_p, f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Saldado)", cl_paga))
+                    # CAMBIO CRÍTICO: Recolectar y unificar todas las notas abiertas de este cliente
+                    lista_detalles_viejos = df_det['detalle'].tolist()
+                    detalle_unificado = unificar_detalles_texto(lista_detalles_viejos)
+                    
+                    # 1. Insertar la nueva fila consolidada y limpia en el turno activo (reporte_id = NULL)
+                    c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente, reporte_id) VALUES (?, ?, ?, ?, ?, NULL)",
+                              (f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Saldado)", monto_resumen, metodo_p, detalle_unificado, cl_paga))
+                    
+                    # 2. Archivar permanentemente las notas individuales viejas con reporte_id = -2 para que no estorben
+                    c.execute("UPDATE ventas SET reporte_id = -2 WHERE cliente = ? AND metodo = 'Crédito' AND reporte_id = -1", (cl_paga,))
+                    
                     conn.commit()
                     st.session_state.confirmar_pago = False
-                    st.success(f"Cuenta de {cl_paga} saldada con éxito y registrada en el turno actual.")
+                    st.success(f"¡Cuenta de {cl_paga} unificada y saldada con éxito!")
                     st.rerun()
 
             if st.session_state.confirmar_consumo:
@@ -239,11 +262,17 @@ elif choice == "📝 Cuentas por Cobrar":
                     st.session_state.confirmar_consumo = False
                     st.rerun()
                 if cc4.button("✅ SÍ, CONFIRMAR CONSUMO", key="btn_si_consumo", use_container_width=True):
-                    # CAMBIO: Al ser consumo, le ponemos reporte_id = -2 para que quede archivado y fuera del flujo de ventas
-                    c.execute("UPDATE ventas SET metodo = ?, fecha = ?, reporte_id = -2 WHERE cliente = ? AND metodo = 'Crédito' AND reporte_id = -1", ("Consumo Interno", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Consumo)", cl_paga))
+                    # CAMBIO: Consolidar también para el registro de consumo interno y sacarlo de circulación
+                    lista_detalles_viejos = df_det['detalle'].tolist()
+                    detalle_unificado = unificar_detalles_texto(lista_detalles_viejos)
+                    
+                    c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente, reporte_id) VALUES (?, ?, ?, ?, ?, -2)",
+                              (f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Consumo)", monto_resumen, "Consumo Interno", detalle_unificado, cl_paga))
+                    
+                    c.execute("UPDATE ventas SET reporte_id = -2 WHERE cliente = ? AND metodo = 'Crédito' AND reporte_id = -1", (cl_paga,))
                     conn.commit()
                     st.session_state.confirmar_consumo = False
-                    st.success(f"Cuenta de {cl_paga} registrada como consumo interno.")
+                    st.success(f"Cuenta de {cl_paga} registrada de forma unificada como consumo interno.")
                     st.rerun()
     else: st.info("Sin deudas pendientes.")
 
