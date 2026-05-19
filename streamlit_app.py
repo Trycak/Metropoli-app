@@ -40,29 +40,7 @@ st.markdown("""
     [data-testid="stSidebar"] { background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true"); background-size: cover; }
     h1, h2, h3, p, span, label, .stMarkdown { color: white !important; text-align: center; }
     
-    /* Mantenemos el tamaño y forma base del botón */
-    div.stButton > button {
-        -webkit-appearance: none !important;
-        appearance: none !important;
-        color: #000000 !important;           
-        border-radius: 12px !important;
-        font-weight: bold !important;
-        font-size: 18px !important;
-        height: 115px !important; 
-        width: 100% !important; 
-        margin-bottom: 10px !important;
-        display: block !important;
-        white-space: pre-line !important;
-    }
-
-    /* Estilo estricto para cuando el producto esté AGOTADO */
-    div.stButton > button:disabled {
-        background-color: #000000 !important;
-        color: #444444 !important;
-        border: 2px solid #333333 !important;
-        opacity: 1 !important;
-    }
-    
+    /* Estilos para el contenedor del carrito y cajas de info */
     .total-carrito {
         background-color: rgba(255, 107, 29, 0.15);
         padding: 20px;
@@ -77,6 +55,13 @@ st.markdown("""
         border-radius: 10px;
         border: 1px solid #ff6b1d;
         margin-bottom: 20px;
+    }
+    
+    /* Diseño nativo e impecable para nuestros nuevos botones de productos */
+    .boton-producto-contenedor {
+        display: block;
+        width: 100%;
+        margin-bottom: 15px;
     }
     </style>
     """, unsafe_allow_html=True)
@@ -124,29 +109,54 @@ if choice == "🛒 Ventas":
         grid = st.columns(3)
         for i, row in prods.iterrows():
             with grid[i % 3]:
-                label_stock = f"({int(row['stock'])})" if row['stock'] > 0 else "(AGOTADO)"
-                texto_final = f"{row['nombre']}\n{label_stock}\n₡{int(row['precio'])}"
+                es_agotado = row['stock'] <= 0
+                label_stock = f"({int(row['stock'])})" if not es_agotado else "(AGOTADO)"
+                color_bg = row['color'] if row['color'] else "#ff6b1d"
                 
-                color_boton = row['color'] if row['color'] else "#ff6b1d"
-                
-                # CORRECCIÓN AQUÍ: Selector ultra-específico usando el testid nativo del botón de Streamlit
-                st.markdown(f"""
-                    <style>
-                    div.stButton > button[data-testid="stBaseButton-secondary"]:has(span:contains("")):nth-of-type({(i // 3) * 0 + 1}) {{
-                        /* Generamos un truco con la llave única del botón */
-                    }}
-                    button[key="p_{row['id']}"] {{
-                        background-color: {color_boton} !important;
-                        border: 2px solid {color_boton} !important;
-                    }}
-                    </style>
-                """, unsafe_allow_html=True)
-                
-                if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock'] <= 0):
-                    pid = str(row['id'])
-                    if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
-                    else: st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
-                    st.rerun()
+                # Definimos los estilos del botón según su estado (Agotado vs Activo con su color propio)
+                if es_agotado:
+                    estilo_html = f"""
+                    <div class="boton-producto-contenedor">
+                        <button disabled style="
+                            background-color: #000000 !important;
+                            color: #444444 !important;
+                            border: 2px solid #333333 !important;
+                            border-radius: 12px;
+                            font-weight: bold;
+                            font-size: 18px;
+                            height: 115px;
+                            width: 100%;
+                            cursor: not-allowed;
+                            white-space: pre-line;
+                        ">{row['nombre']}\n{label_stock}\n₡{int(row['precio'])}</button>
+                    </div>
+                    """
+                    st.markdown(estilo_html, unsafe_allow_html=True)
+                else:
+                    # Si el producto está activo, usamos st.button con un truco de estilo superpuesto e indestructible
+                    st.markdown(f"""
+                        <style>
+                        div:has(> button[key="p_{row['id']}"]) button {{
+                            background-color: {color_bg} !important;
+                            color: #000000 !important;
+                            border: 2px solid {color_bg} !important;
+                            border-radius: 12px !important;
+                            font-weight: bold !important;
+                            font-size: 18px !important;
+                            height: 115px !important;
+                            width: 100% !important;
+                            white-space: pre-line !important;
+                        }}
+                        </style>
+                    """, unsafe_allow_html=True)
+                    
+                    # El botón real que captura el clic del cajero
+                    if st.button(f"{row['nombre']}\n{label_stock}\n₡{int(row['precio'])}", key=f"p_{row['id']}"):
+                        pid = str(row['id'])
+                        if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
+                        else: st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
+                        st.rerun()
+                        
     with col_cart:
         st.subheader("🛒 Carrito")
         if st.session_state.carrito:
