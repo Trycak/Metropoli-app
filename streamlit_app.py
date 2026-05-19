@@ -26,11 +26,10 @@ c.execute('CREATE TABLE IF NOT EXISTS productos (id INTEGER PRIMARY KEY, nombre 
 c.execute('CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, fecha TEXT, total REAL, metodo TEXT, detalle TEXT, cliente TEXT, reporte_id INTEGER)')
 c.execute('CREATE TABLE IF NOT EXISTS históricos_reportes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_caja REAL)')
 
-# Verificación dinámica: Añadir columna 'color' si no existe en la tabla productos
+# Verificación dinámica: Añadir columna 'color' si no existe
 try:
     c.execute('ALTER TABLE productos ADD COLUMN color TEXT DEFAULT "#ff6b1d"')
 except sqlite3.OperationalError:
-    # Si ya existe, no hace nada
     pass
 conn.commit()
 
@@ -41,7 +40,7 @@ st.markdown("""
     [data-testid="stSidebar"] { background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true"); background-size: cover; }
     h1, h2, h3, p, span, label, .stMarkdown { color: white !important; text-align: center; }
     
-    /* Mantenemos el estilo base de los botones, pero permitiremos colores dinámicos */
+    /* Mantenemos el tamaño y forma base del botón */
     div.stButton > button {
         -webkit-appearance: none !important;
         appearance: none !important;
@@ -56,6 +55,7 @@ st.markdown("""
         white-space: pre-line !important;
     }
 
+    /* Estilo estricto para cuando el producto esté AGOTADO */
     div.stButton > button:disabled {
         background-color: #000000 !important;
         color: #444444 !important;
@@ -120,21 +120,22 @@ if choice == "🛒 Ventas":
     col_prods, col_cart = st.columns([2, 1])
     with col_prods:
         st.subheader("🛒 Productos Disponibles")
-        # Traemos también la columna color
         prods = pd.read_sql_query("SELECT * FROM productos ORDER BY nombre ASC", conn)
         grid = st.columns(3)
         for i, row in prods.iterrows():
             with grid[i % 3]:
                 label_stock = f"({int(row['stock'])})" if row['stock'] > 0 else "(AGOTADO)"
-                texto_final = f"{row['nombre']} {label_stock}\n₡{int(row['precio'])}"
+                texto_final = f"{row['nombre']}\n{label_stock}\n₡{int(row['precio'])}"
                 
-                # Obtener el color de la BD (usa el naranja por defecto si está vacío)
                 color_boton = row['color'] if row['color'] else "#ff6b1d"
                 
-                # Inyección de CSS quirúrgica para cambiar el color de ESTE botón específico mediante su llave (key)
+                # CORRECCIÓN AQUÍ: Selector ultra-específico usando el testid nativo del botón de Streamlit
                 st.markdown(f"""
                     <style>
-                    div[data-testid="stMarkdownContainer"] + div.stButton > button[key="p_{row['id']}"] {{
+                    div.stButton > button[data-testid="stBaseButton-secondary"]:has(span:contains("")):nth-of-type({(i // 3) * 0 + 1}) {{
+                        /* Generamos un truco con la llave única del botón */
+                    }}
+                    button[key="p_{row['id']}"] {{
                         background-color: {color_boton} !important;
                         border: 2px solid {color_boton} !important;
                     }}
@@ -176,17 +177,15 @@ if choice == "🛒 Ventas":
 
 elif choice == "📦 Inventario":
     st.header("📦 Gestión de Inventario")
-    # Traemos la columna color al editor de datos
     df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock, color FROM productos ORDER BY nombre ASC", conn)
     df_inv['Eliminar'] = False
     _, mid, _ = st.columns([1, 6, 1])
     with mid:
-        # Añadimos una bonita ayuda visual para que el editor de datos use un selector de color real si se desea, o texto
         df_ed = st.data_editor(
             df_inv, 
             column_config={
                 "id": None, 
-                "color": st.column_config.TextColumn("Color (Nombre o Hex)", help="Puedes usar nombres como 'lightgreen', 'lightblue', 'pink', 'yellow' o códigos como #ff6b1d"),
+                "color": st.column_config.TextColumn("Color (Nombre o Hex)", help="Ejemplos: lightgreen, lightblue, yellow, #ff6b1d"),
                 "Eliminar": st.column_config.CheckboxColumn("¿Borrar?", default=False)
             }, 
             hide_index=True, 
@@ -219,7 +218,6 @@ elif choice == "📊 Productos Vendidos":
     else: st.info("No hay ventas en este turno.")
 
 elif choice == "📝 Cuentas por Cobrar":
-    # (Se mantiene exactamente igual tu lógica unificada que ya validamos)
     st.header("📝 Gestión de Créditos")
     df_cc = pd.read_sql_query("SELECT cliente, SUM(total) as deuda FROM ventas WHERE metodo = 'Crédito' AND reporte_id = -1 GROUP BY cliente", conn)
     if not df_cc.empty:
@@ -299,7 +297,6 @@ elif choice == "📝 Cuentas por Cobrar":
     else: st.info("Sin deudas pendientes.")
 
 elif choice == "📋 Reportes":
-    # (Se mantiene igual)
     tab_actual, tab_historico = st.tabs(["🔴 Turno Actual", "💾 Historial de Cierres"])
     with tab_actual:
         st.header("Ventas del Periodo Activo")
