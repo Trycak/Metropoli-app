@@ -133,7 +133,9 @@ if choice == "🛒 Ventas":
                 if metodo == "Crédito" and not cliente_n: st.error("Falta nombre")
                 else:
                     det = ", ".join([f"{v['nombre']}({v['cantidad']})" for v in st.session_state.carrito.values()])
-                    c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente) VALUES (?,?,?,?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), total_v, metodo, det, cliente_n))
+                    # CAMBIO: Si es crédito, nace con reporte_id = -1 para ocultarlo de los reportes del turno actual
+                    rep_id_inicial = -1 if metodo == "Crédito" else None
+                    c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente, reporte_id) VALUES (?,?,?,?,?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), total_v, metodo, det, cliente_n, rep_id_inicial))
                     for pid, item in st.session_state.carrito.items():
                         c.execute("UPDATE productos SET stock = stock - ? WHERE id = ?", (item['cantidad'], int(pid)))
                     conn.commit(); st.session_state.carrito = {}; st.success("¡Venta Lista!"); st.rerun()
@@ -172,7 +174,8 @@ elif choice == "📊 Productos Vendidos":
 
 elif choice == "📝 Cuentas por Cobrar":
     st.header("📝 Gestión de Créditos")
-    df_cc = pd.read_sql_query("SELECT cliente, SUM(total) as deuda FROM ventas WHERE metodo = 'Crédito' GROUP BY cliente", conn)
+    # CAMBIO: Filtramos por metodo='Crédito' y reporte_id=-1 para mostrar solo las pendientes
+    df_cc = pd.read_sql_query("SELECT cliente, SUM(total) as deuda FROM ventas WHERE metodo = 'Crédito' AND reporte_id = -1 GROUP BY cliente", conn)
     if not df_cc.empty:
         col_lista, col_detalle = st.columns([1, 2])
         with col_lista:
@@ -180,7 +183,7 @@ elif choice == "📝 Cuentas por Cobrar":
             monto_resumen = df_cc[df_cc['cliente'] == cl_paga]['deuda'].values[0]
             st.markdown(f"<div class='info-caja'><h4>Total Deuda:<br>₡{int(monto_resumen)}</h4></div>", unsafe_allow_html=True)
         with col_detalle:
-            df_det = pd.read_sql_query("SELECT id, fecha, detalle, total FROM ventas WHERE cliente = ? AND metodo = 'Crédito'", conn, params=(cl_paga,))
+            df_det = pd.read_sql_query("SELECT id, fecha, detalle, total FROM ventas WHERE cliente = ? AND metodo = 'Crédito' AND reporte_id = -1", conn, params=(cl_paga,))
             df_det['Borrar?'] = False
             df_det_ed = st.data_editor(df_det, column_config={"id": None}, hide_index=True, use_container_width=True)
             c_c1, c_c2 = st.columns(2)
@@ -189,15 +192,13 @@ elif choice == "📝 Cuentas por Cobrar":
                 conn.commit(); st.rerun()
             if c_c2.button("🗑️ Eliminar Notas", use_container_width=True):
                 for _, row in df_det_ed[df_det_ed['Borrar?']].iterrows(): c.execute("DELETE FROM ventas WHERE id = ?", (int(row['id']),))
-                conn.commit(); r.rerun()
+                conn.commit(); st.rerun()
             st.divider()
             
-            # Inicialización de estados de confirmación en la sesión
             if 'confirmar_pago' not in st.session_state: st.session_state.confirmar_pago = False
             if 'confirmar_consumo' not in st.session_state: st.session_state.confirmar_consumo = False
             if 'cliente_actual' not in st.session_state: st.session_state.cliente_actual = cl_paga
 
-            # Si se cambia de cliente, se reinician las alertas por seguridad
             if st.session_state.cliente_actual != cl_paga:
                 st.session_state.confirmar_pago = False
                 st.session_state.confirmar_consumo = False
@@ -224,10 +225,11 @@ elif choice == "📝 Cuentas por Cobrar":
                     st.session_state.confirmar_pago = False
                     st.rerun()
                 if cc2.button("✅ SÍ, CONFIRMAR PAGO", key="btn_si_pago", use_container_width=True):
-                    c.execute("UPDATE ventas SET metodo = ?, fecha = ? WHERE cliente = ? AND metodo = 'Crédito'", (metodo_p, f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Saldado)", cl_paga))
+                    # CAMBIO: Al pagar, ponemos reporte_id = NULL para que aparezca en el turno activo con su nuevo método de pago
+                    c.execute("UPDATE ventas SET metodo = ?, fecha = ?, reporte_id = NULL WHERE cliente = ? AND metodo = 'Crédito' AND reporte_id = -1", (metodo_p, f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Saldado)", cl_paga))
                     conn.commit()
                     st.session_state.confirmar_pago = False
-                    st.success(f"Cuenta de {cl_paga} saldada con éxito.")
+                    st.success(f"Cuenta de {cl_paga} saldada con éxito y registrada en el turno actual.")
                     st.rerun()
 
             if st.session_state.confirmar_consumo:
@@ -237,12 +239,13 @@ elif choice == "📝 Cuentas por Cobrar":
                     st.session_state.confirmar_consumo = False
                     st.rerun()
                 if cc4.button("✅ SÍ, CONFIRMAR CONSUMO", key="btn_si_consumo", use_container_width=True):
-                    c.execute("UPDATE ventas SET metodo = ?, fecha = ? WHERE cliente = ? AND metodo = 'Crédito'", ("Consumo Interno", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Consumo)", cl_paga))
+                    # CAMBIO: Al ser consumo, le ponemos reporte_id = -2 para que quede archivado y fuera del flujo de ventas
+                    c.execute("UPDATE ventas SET metodo = ?, fecha = ?, reporte_id = -2 WHERE cliente = ? AND metodo = 'Crédito' AND reporte_id = -1", ("Consumo Interno", f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Consumo)", cl_paga))
                     conn.commit()
                     st.session_state.confirmar_consumo = False
-                    st.success(f"Cuenta de {cl_paga} registrada como consumo.")
+                    st.success(f"Cuenta de {cl_paga} registrada como consumo interno.")
                     st.rerun()
-    else: st.info("Sin deudas.")
+    else: st.info("Sin deudas pendientes.")
 
 elif choice == "📋 Reportes":
     tab_actual, tab_historico = st.tabs(["🔴 Turno Actual", "💾 Historial de Cierres"])
