@@ -25,21 +25,27 @@ c = conn.cursor()
 c.execute('CREATE TABLE IF NOT EXISTS productos (id INTEGER PRIMARY KEY, nombre TEXT, precio REAL, stock INTEGER)')
 c.execute('CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, fecha TEXT, total REAL, metodo TEXT, detalle TEXT, cliente TEXT, reporte_id INTEGER)')
 c.execute('CREATE TABLE IF NOT EXISTS históricos_reportes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_caja REAL)')
+
+# Verificación dinámica: Añadir columna 'color' si no existe en la tabla productos
+try:
+    c.execute('ALTER TABLE productos ADD COLUMN color TEXT DEFAULT "#ff6b1d"')
+except sqlite3.OperationalError:
+    # Si ya existe, no hace nada
+    pass
 conn.commit()
 
-# --- ESTILOS VISUALES ---
+# --- ESTILOS VISUALES GENERALES ---
 st.markdown("""
     <style>
     .stApp { background-color: #134971 !important; }
     [data-testid="stSidebar"] { background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true"); background-size: cover; }
     h1, h2, h3, p, span, label, .stMarkdown { color: white !important; text-align: center; }
     
+    /* Mantenemos el estilo base de los botones, pero permitiremos colores dinámicos */
     div.stButton > button {
         -webkit-appearance: none !important;
         appearance: none !important;
-        background-color: #ff6b1d !important; 
         color: #000000 !important;           
-        border: 2px solid #d15615 !important; 
         border-radius: 12px !important;
         font-weight: bold !important;
         font-size: 18px !important;
@@ -90,7 +96,6 @@ def obtener_conteo_productos(df):
     return pd.DataFrame(list(conteo.items()), columns=['Producto', 'Cant.']).sort_values(by='Cant.', ascending=False)
 
 def unificar_detalles_texto(lista_detalles):
-    """Consolida múltiples strings de detalle en uno solo limpio y acumulado"""
     conteo = {}
     for detalle in lista_detalles:
         partes = str(detalle).split(", ")
@@ -115,12 +120,27 @@ if choice == "🛒 Ventas":
     col_prods, col_cart = st.columns([2, 1])
     with col_prods:
         st.subheader("🛒 Productos Disponibles")
+        # Traemos también la columna color
         prods = pd.read_sql_query("SELECT * FROM productos ORDER BY nombre ASC", conn)
         grid = st.columns(3)
         for i, row in prods.iterrows():
             with grid[i % 3]:
                 label_stock = f"({int(row['stock'])})" if row['stock'] > 0 else "(AGOTADO)"
                 texto_final = f"{row['nombre']} {label_stock}\n₡{int(row['precio'])}"
+                
+                # Obtener el color de la BD (usa el naranja por defecto si está vacío)
+                color_boton = row['color'] if row['color'] else "#ff6b1d"
+                
+                # Inyección de CSS quirúrgica para cambiar el color de ESTE botón específico mediante su llave (key)
+                st.markdown(f"""
+                    <style>
+                    div[data-testid="stMarkdownContainer"] + div.stButton > button[key="p_{row['id']}"] {{
+                        background-color: {color_boton} !important;
+                        border: 2px solid {color_boton} !important;
+                    }}
+                    </style>
+                """, unsafe_allow_html=True)
+                
                 if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock'] <= 0):
                     pid = str(row['id'])
                     if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
@@ -156,14 +176,26 @@ if choice == "🛒 Ventas":
 
 elif choice == "📦 Inventario":
     st.header("📦 Gestión de Inventario")
-    df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
+    # Traemos la columna color al editor de datos
+    df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock, color FROM productos ORDER BY nombre ASC", conn)
     df_inv['Eliminar'] = False
     _, mid, _ = st.columns([1, 6, 1])
     with mid:
-        df_ed = st.data_editor(df_inv, column_config={"id": None, "Eliminar": st.column_config.CheckboxColumn("¿Borrar?", default=False)}, hide_index=True, use_container_width=True)
+        # Añadimos una bonita ayuda visual para que el editor de datos use un selector de color real si se desea, o texto
+        df_ed = st.data_editor(
+            df_inv, 
+            column_config={
+                "id": None, 
+                "color": st.column_config.TextColumn("Color (Nombre o Hex)", help="Puedes usar nombres como 'lightgreen', 'lightblue', 'pink', 'yellow' o códigos como #ff6b1d"),
+                "Eliminar": st.column_config.CheckboxColumn("¿Borrar?", default=False)
+            }, 
+            hide_index=True, 
+            use_container_width=True
+        )
         c_inv1, c_inv2 = st.columns(2)
         if c_inv1.button("💾 Guardar Cambios", use_container_width=True):
-            for _, r in df_ed.iterrows(): c.execute("UPDATE productos SET nombre=?, precio=?, stock=? WHERE id=?", (r['nombre'], r['precio'], r['stock'], int(r['id'])))
+            for _, r in df_ed.iterrows(): 
+                c.execute("UPDATE productos SET nombre=?, precio=?, stock=?, color=? WHERE id=?", (r['nombre'], r['precio'], r['stock'], r['color'], int(r['id'])))
             conn.commit(); st.success("Inventario Actualizado"); st.rerun()
         if c_inv2.button("🗑️ Eliminar Seleccionados", use_container_width=True):
             for _, r in df_ed[df_ed['Eliminar']].iterrows(): c.execute("DELETE FROM productos WHERE id = ?", (int(r['id']),))
@@ -173,8 +205,9 @@ elif choice == "📦 Inventario":
                 n = st.text_input("Nombre")
                 p = st.number_input("Precio", min_value=0)
                 s = st.number_input("Stock Inicial", min_value=0)
+                col_elegido = st.text_input("Color (Opcional)", value="#ff6b1d")
                 if st.form_submit_button("Añadir"):
-                    c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (n,p,s))
+                    c.execute("INSERT INTO productos (nombre, precio, stock, color) VALUES (?,?,?,?)", (n,p,s,col_elegido))
                     conn.commit(); st.rerun()
 
 elif choice == "📊 Productos Vendidos":
@@ -186,6 +219,7 @@ elif choice == "📊 Productos Vendidos":
     else: st.info("No hay ventas en este turno.")
 
 elif choice == "📝 Cuentas por Cobrar":
+    # (Se mantiene exactamente igual tu lógica unificada que ya validamos)
     st.header("📝 Gestión de Créditos")
     df_cc = pd.read_sql_query("SELECT cliente, SUM(total) as deuda FROM ventas WHERE metodo = 'Crédito' AND reporte_id = -1 GROUP BY cliente", conn)
     if not df_cc.empty:
@@ -229,7 +263,6 @@ elif choice == "📝 Cuentas por Cobrar":
                     st.session_state.confirmar_consumo = True
                     st.session_state.confirmar_pago = False
 
-            # --- BLOQUE DE CONFIRMACIÓN INTERACTIVA ---
             if st.session_state.confirmar_pago:
                 st.warning(f"⚠️ ¿Estás seguro de cancelar con el método de pago **{metodo_p}** la cuenta de **{cl_paga}** por un monto de ₡{int(monto_resumen)}?")
                 cc1, cc2 = st.columns(2)
@@ -239,14 +272,9 @@ elif choice == "📝 Cuentas por Cobrar":
                 if cc2.button("✅ SÍ, CONFIRMAR PAGO", key="btn_si_pago", use_container_width=True):
                     lista_detalles_viejos = df_det['detalle'].tolist()
                     detalle_unificado = unificar_detalles_texto(lista_detalles_viejos)
-                    
-                    # 1. Insertar la nueva fila consolidada en el turno activo (reporte_id = NULL) con el detalle unificado corregido
                     c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente, reporte_id) VALUES (?, ?, ?, ?, ?, NULL)",
                               (f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Saldado)", monto_resumen, metodo_p, detalle_unificado, cl_paga))
-                    
-                    # 2. Archivar permanentemente las notas individuales viejas (reporte_id = -2)
                     c.execute("UPDATE ventas SET reporte_id = -2 WHERE cliente = ? AND metodo = 'Crédito' AND reporte_id = -1", (cl_paga,))
-                    
                     conn.commit()
                     st.session_state.confirmar_pago = False
                     st.success(f"¡Cuenta de {cl_paga} unificada y saldada con éxito!")
@@ -261,10 +289,8 @@ elif choice == "📝 Cuentas por Cobrar":
                 if cc4.button("✅ SÍ, CONFIRMAR CONSUMO", key="btn_si_consumo", use_container_width=True):
                     lista_detalles_viejos = df_det['detalle'].tolist()
                     detalle_unificado = unificar_detalles_texto(lista_detalles_viejos)
-                    
                     c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente, reporte_id) VALUES (?, ?, ?, ?, ?, -2)",
                               (f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Consumo)", monto_resumen, "Consumo Interno", detalle_unificado, cl_paga))
-                    
                     c.execute("UPDATE ventas SET reporte_id = -2 WHERE cliente = ? AND metodo = 'Crédito' AND reporte_id = -1", (cl_paga,))
                     conn.commit()
                     st.session_state.confirmar_consumo = False
@@ -273,6 +299,7 @@ elif choice == "📝 Cuentas por Cobrar":
     else: st.info("Sin deudas pendientes.")
 
 elif choice == "📋 Reportes":
+    # (Se mantiene igual)
     tab_actual, tab_historico = st.tabs(["🔴 Turno Actual", "💾 Historial de Cierres"])
     with tab_actual:
         st.header("Ventas del Periodo Activo")
