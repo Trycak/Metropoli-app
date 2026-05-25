@@ -40,7 +40,7 @@ st.markdown("""
     [data-testid="stSidebar"] { background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true"); background-size: cover; }
     h1, h2, h3, p, span, label, .stMarkdown { color: white !important; text-align: center; }
     
-    /* TRUCO MAESTRO: Estilo único para todos los botones de venta usando una variable (--color-dinamico) */
+    /* CONFIGURACIÓN ESTABLE DE BOTONES: Heredan el color dinámico del contenedor de manera segura */
     div.bloque-producto button {
         -webkit-appearance: none !important;
         appearance: none !important;
@@ -129,10 +129,9 @@ if choice == "🛒 Ventas":
                 label_stock = f"({int(row['stock'])})" if row['stock'] > 0 else "(AGOTADO)"
                 texto_final = f"{row['nombre']} {label_stock}\n₡{int(row['precio'])}"
                 
-                # Si el color está vacío en la BD, usamos el naranja por defecto
                 color_prod = row['color'] if row['color'] else "#ff6b1d"
                 
-                # Encapsulamos el botón dentro de un contenedor contenedor (div) que lleva asignado su color correspondiente
+                # Inyección limpia mediante variable de entorno CSS encapsulada
                 st.markdown(f'<div class="bloque-producto" style="--color-dinamico: {color_prod};">', unsafe_allow_html=True)
                 
                 if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock'] <= 0):
