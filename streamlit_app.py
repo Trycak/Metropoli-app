@@ -21,41 +21,43 @@ def conectar_db():
 conn = conectar_db()
 c = conn.cursor()
 
-# Asegurar tablas básicas
+# Asegurar tablas
 c.execute('CREATE TABLE IF NOT EXISTS productos (id INTEGER PRIMARY KEY, nombre TEXT, precio REAL, stock INTEGER)')
 c.execute('CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, fecha TEXT, total REAL, metodo TEXT, detalle TEXT, cliente TEXT, reporte_id INTEGER)')
 c.execute('CREATE TABLE IF NOT EXISTS históricos_reportes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_caja REAL)')
 conn.commit()
 
-# --- ESTILOS VISUALES GENERALES Y ESTANDARIZACIÓN DE BOTONES ---
+# --- ESTILOS VISUALES UNIFICADOS ---
 st.markdown("""
     <style>
     .stApp { background-color: #134971 !important; }
     [data-testid="stSidebar"] { background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true"); background-size: cover; }
     h1, h2, h3, p, span, label, .stMarkdown { color: white !important; text-align: center; }
     
-    /* REGLA DE ORO: Forzar a TODOS los botones de productos a ser exactamente iguales */
+    /* CONTROL ESTRICTO DE TAMAÑO SIMÉTRICO PARA BOTONES */
     div.bloque-producto button {
-        background-color: #ff6b1d !important; /* Color naranja institucional unificado */
+        -webkit-appearance: none !important;
+        appearance: none !important;
+        background-color: #ff6b1d !important; 
         color: #000000 !important;           
-        border: 2px solid #ff6b1d !important; 
+        border: 2px solid #d15615 !important; 
         border-radius: 12px !important;
         font-weight: bold !important;
-        font-size: 16px !important;
+        font-size: 17px !important;
         
-        /* Tamaño idéntico y estricto sin importar la longitud del texto */
-        height: 110px !important; 
+        /* Forzado dimensional idéntico para todos */
+        height: 115px !important; 
         width: 100% !important; 
+        margin-bottom: 10px !important;
         display: block !important;
-        white-space: pre-line !important; /* Permite saltos de línea ordenados */
+        white-space: pre-line !important;
         overflow: hidden !important;
         text-overflow: ellipsis !important;
     }
 
-    /* Variación estética limpia para cuando el producto esté sin stock */
     div.bloque-producto button:disabled {
-        background-color: #1a1a1a !important;
-        color: #666666 !important;
+        background-color: #000000 !important;
+        color: #444444 !important;
         border: 2px solid #333333 !important;
         opacity: 1 !important;
     }
@@ -117,22 +119,21 @@ if choice == "🛒 Ventas":
     col_prods, col_cart = st.columns([2, 1])
     with col_prods:
         st.subheader("🛒 Productos Disponibles")
+        # Forzar lectura limpia de columnas base para la cuadrícula
         prods = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
         grid = st.columns(3)
         for i, row in prods.iterrows():
             with grid[i % 3]:
                 label_stock = f"({int(row['stock'])})" if row['stock'] > 0 else "(AGOTADO)"
-                texto_final = f"{row['nombre']}\n{label_stock}\n₡{int(row['precio'])}"
+                texto_final = f"{row['nombre']} {label_stock}\n₡{int(row['precio'])}"
                 
-                # Encapsulamos el botón dentro de nuestro contenedor simétrico
+                # Encapsulación en contenedor simétrico rígido
                 st.markdown('<div class="bloque-producto">', unsafe_allow_html=True)
-                
                 if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock'] <= 0):
                     pid = str(row['id'])
                     if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
                     else: st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
                     st.rerun()
-                
                 st.markdown('</div>', unsafe_allow_html=True)
                 
     with col_cart:
@@ -165,28 +166,19 @@ if choice == "🛒 Ventas":
 
 elif choice == "📦 Inventario":
     st.header("📦 Gestión de Inventario")
-    # Quitamos el campo color del SELECT para limpiar la interfaz por completo
+    # Forzar consulta limpia sin columna 'color' para removerla del editor por completo
     df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
     df_inv['Eliminar'] = False
     _, mid, _ = st.columns([1, 6, 1])
     with mid:
-        df_ed = st.data_editor(
-            df_inv, 
-            column_config={
-                "id": None, 
-                "Eliminar": st.column_config.CheckboxColumn("¿Borrar?", default=False)
-            }, 
-            hide_index=True, 
-            use_container_width=True
-        )
+        df_ed = st.data_editor(df_inv, column_config={"id": None, "Eliminar": st.column_config.CheckboxColumn("¿Borrar?", default=False)}, hide_index=True, use_container_width=True)
         c_inv1, c_inv2 = st.columns(2)
         if c_inv1.button("💾 Guardar Cambios", use_container_width=True):
-            for _, r in df_ed.iterrows(): 
-                c.execute("UPDATE productos SET nombre=?, precio=?, stock=? WHERE id=?", (r['nombre'], r['precio'], r['stock'], int(r['id'])))
+            for _, r in df_ed.iterrows(): c.execute("UPDATE productos SET nombre=?, precio=?, stock=? WHERE id=?", (r['nombre'], r['precio'], r['stock'], int(r['id'])))
             conn.commit(); st.success("Inventario Actualizado"); st.rerun()
         if c_inv2.button("🗑️ Eliminar Seleccionados", use_container_width=True):
             for _, r in df_ed[df_ed['Eliminar']].iterrows(): c.execute("DELETE FROM productos WHERE id = ?", (int(r['id']),))
-            conn.commit(); st.rerun()
+            conn.commit(); r.rerun()
         with st.expander("➕ AGREGAR NUEVO PRODUCTO"):
             with st.form("n_p", clear_on_submit=True):
                 n = st.text_input("Nombre")
@@ -223,7 +215,7 @@ elif choice == "📝 Cuentas por Cobrar":
                 conn.commit(); st.rerun()
             if c_c2.button("🗑️ Eliminar Notas", use_container_width=True):
                 for _, row in df_det_ed[df_det_ed['Borrar?']].iterrows(): c.execute("DELETE FROM ventas WHERE id = ?", (int(row['id']),))
-                conn.commit(); st.rerun()
+                conn.commit(); r.rerun()
             st.divider()
             
             if 'confirmar_pago' not in st.session_state: st.session_state.confirmar_pago = False
