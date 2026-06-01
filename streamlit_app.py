@@ -27,7 +27,7 @@ c.execute('CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, fecha TEXT
 c.execute('CREATE TABLE IF NOT EXISTS históricos_reportes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_caja REAL)')
 conn.commit()
 
-# --- ESTILOS VISUALES ORIGINALES ---
+# --- ESTILOS VISUALES ---
 st.markdown("""
     <style>
     .stApp { background-color: #134971 !important; }
@@ -120,16 +120,12 @@ if choice == "🛒 Ventas":
         for i, row in prods.iterrows():
             with grid[i % 3]:
                 label_stock = f"({int(row['stock'])})" if row['stock'] > 0 else "(AGOTADO)"
-                
-                # ÚNICO CAMBIO REAL: El texto ahora se divide en 3 líneas exactas con (\n)
-                texto_final = f"{row['nombre']}\n{label_stock}\n₡{int(row['precio'])}"
-                
-                if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock'] <= 0):
+                texto_final = f"{row['nombre']} {label_stock}\n₡{int(row['precio'])}"
+                if st.button(texto_final, width=20, key=f"p_{row['id']}", disabled=row['stock'] <= 0):
                     pid = str(row['id'])
                     if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
                     else: st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
                     st.rerun()
-                    
     with col_cart:
         st.subheader("🛒 Carrito")
         if st.session_state.carrito:
@@ -295,9 +291,9 @@ elif choice == "📋 Reportes":
         st.header("Consulta de Cierres Pasados")
         historicos = pd.read_sql_query("SELECT * FROM históricos_reportes ORDER BY id DESC", conn)
         if not historicos.empty:
-            options_cierre = {f"ID: {r['id']} | Fecha: {r['fecha_cierre']} | Total: ₡{int(r['total_caja'])}": r['id'] for _, r in historicos.iterrows()}
-            seleccion = st.selectbox("Seleccione un cierre para ver detalle:", list(options_cierre.keys()))
-            id_cierre = options_cierre[seleccion]
+            opciones_cierre = {f"ID: {r['id']} | Fecha: {r['fecha_cierre']} | Total: ₡{int(r['total_caja'])}": r['id'] for _, r in historicos.iterrows()}
+            seleccion = st.selectbox("Seleccione un cierre para ver detalle:", list(opciones_cierre.keys()))
+            id_cierre = opciones_cierre[seleccion]
             df_hist = pd.read_sql_query("SELECT fecha, total, metodo, detalle, cliente FROM ventas WHERE reporte_id = ?", conn, params=(id_cierre,))
             st.markdown(f"<div class='info-caja'><h3>Reporte #{id_cierre}</h3></div>", unsafe_allow_html=True)
             st.dataframe(df_hist, hide_index=True, use_container_width=True)
