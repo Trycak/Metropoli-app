@@ -114,7 +114,7 @@ if choice == "🛒 Ventas":
     if 'carrito' not in st.session_state: st.session_state.carrito = {}
     col_prods, col_cart = st.columns([2, 1])
     with col_prods:
-        st.subheader("🛒 Productos Disponibles")
+        st.subheader("🛒 Productos que hay")
         prods = pd.read_sql_query("SELECT * FROM productos ORDER BY nombre ASC", conn)
         grid = st.columns(3)
         for i, row in prods.iterrows():
