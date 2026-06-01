@@ -37,7 +37,7 @@ st.markdown("""
     div.stButton > button {
         -webkit-appearance: none !important;
         appearance: none !important;
-        background-color: #ff6b1d !important; 
+        background-color: #2e7d32 !important; 
         color: #000000 !important;           
         border: 2px solid #d15615 !important; 
         border-radius: 12px !important;
