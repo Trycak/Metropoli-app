@@ -121,7 +121,7 @@ if choice == "🛒 Ventas":
             with grid[i % 3]:
                 label_stock = f"({int(row['stock'])})" if row['stock'] > 0 else "(AGOTADO)"
                 texto_final = f"{row['nombre']} {label_stock}\n₡{int(row['precio'])}"
-                if st.button(texto_final, width=20, key=f"p_{row['id']}", disabled=row['stock'] <= 0):
+                if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock'] <= 0, use_container_width=True):
                     pid = str(row['id'])
                     if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
                     else: st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
