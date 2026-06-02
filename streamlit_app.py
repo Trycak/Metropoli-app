@@ -37,7 +37,7 @@ st.markdown("""
     div.stButton > button {
         -webkit-appearance: none !important;
         appearance: none !important;
-        background-color: #2e7d32 !important; 
+        background-color: #ff6b1d !important; 
         color: #000000 !important;           
         border: 2px solid #d15615 !important; 
         border-radius: 12px !important;
@@ -114,14 +114,14 @@ if choice == "🛒 Ventas":
     if 'carrito' not in st.session_state: st.session_state.carrito = {}
     col_prods, col_cart = st.columns([2, 1])
     with col_prods:
-        st.subheader("🛒 Productos que hay")
+        st.subheader("🛒 Productos Disponibles")
         prods = pd.read_sql_query("SELECT * FROM productos ORDER BY nombre ASC", conn)
         grid = st.columns(3)
         for i, row in prods.iterrows():
             with grid[i % 3]:
                 label_stock = f"({int(row['stock'])})" if row['stock'] > 0 else "(AGOTADO)"
                 texto_final = f"{row['nombre']} {label_stock}\n₡{int(row['precio'])}"
-                if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock'] <= 0, use_container_width=True):
+                if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock'] <= 0):
                     pid = str(row['id'])
                     if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
                     else: st.session_state.carrito[pid] = {'nombre': row['nombre'], 'precio': row['precio'], 'cantidad': 1}
