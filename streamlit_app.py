@@ -202,7 +202,7 @@ elif choice == "📦 Inventario":
             with conn:
                 for _, r in df_ed[df_ed['Eliminar']].iterrows(): 
                     c.execute("DELETE FROM productos WHERE id = ?", (int(r['id']),))
-            st.rerun()  # ✅ Corregido r.rerun() a st.rerun()
+            st.rerun()  # ✅ CORREGIDO: st.rerun() en lugar de r.rerun()
             
         with st.expander("➕ AGREGAR NUEVO PRODUCTO"):
             with st.form("n_p", clear_on_submit=True):
@@ -291,11 +291,9 @@ elif choice == "📝 Cuentas por Cobrar":
                     detalle_unificado = unificar_detalles_texto(lista_detalles_viejos)
                     
                     with conn:
-                        # 1. Insertar la nueva fila consolidada en el turno activo (reporte_id = NULL)
                         c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente, reporte_id) VALUES (?, ?, ?, ?, ?, NULL)",
                                   (f"{datetime.now().strftime('%Y-%m-%d %H:%M')} (Saldado)", monto_resumen, metodo_p, detalle_unificado, cl_paga))
                         
-                        # 2. Archivar permanentemente las notas individuales viejas (reporte_id = -2)
                         c.execute("UPDATE ventas SET reporte_id = -2 WHERE cliente = ? AND metodo = 'Crédito' AND reporte_id = -1", (cl_paga,))
                     
                     st.session_state.confirmar_pago = False
@@ -361,3 +359,4 @@ elif choice == "📋 Reportes":
             st.dataframe(df_prod_hist, hide_index=True, use_container_width=True)
         else:
             st.info("Aún no hay reportes cerrados en el historial.")
+        
