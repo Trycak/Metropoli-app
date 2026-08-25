@@ -19,9 +19,16 @@ conn = conectar_db()
 c = conn.cursor()
 
 # Asegurar tablas
-c.execute('CREATE TABLE IF NOT EXISTS productos (id INTEGER PRIMARY KEY, nombre TEXT, precio REAL, stock INTEGER)')
+c.execute('CREATE TABLE IF NOT EXISTS productos (id INTEGER PRIMARY KEY, nombre TEXT, precio REAL, stock INTEGER, activo INTEGER DEFAULT 1)')
 c.execute('CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, fecha TEXT, total REAL, metodo TEXT, detalle TEXT, cliente TEXT, reporte_id INTEGER)')
 c.execute('CREATE TABLE IF NOT EXISTS históricos_reportes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_caja REAL)')
+
+# Migración automática por si la columna 'activo' no existía previamente
+try:
+    c.execute('ALTER TABLE productos ADD COLUMN activo INTEGER DEFAULT 1')
+except:
+    pass # La columna ya existe
+
 conn.commit()
 
 # --- ESTILOS VISUALES ---
@@ -112,7 +119,8 @@ if choice == "🛒 Ventas":
     col_prods, col_cart = st.columns([2, 1])
     with col_prods:
         st.subheader("🛒 Productos Disponibles")
-        prods = pd.read_sql_query("SELECT * FROM productos ORDER BY nombre ASC", conn)
+        # Solo consultamos los productos con activo = 1
+        prods = pd.read_sql_query("SELECT * FROM productos WHERE activo = 1 ORDER BY nombre ASC", conn)
         grid = st.columns(3)
         for i, row in prods.iterrows():
             with grid[i % 3]:
@@ -135,11 +143,10 @@ if choice == "🛒 Ventas":
             st.markdown(f"""<div class="total-carrito"><p style="margin:0; font-size:16px; color:#ff6b1d;">MONTO A PAGAR</p><h1 style="margin:0; font-size:45px; color:white;">₡{int(total_v)}</h1></div>""", unsafe_allow_html=True)
             st.divider()
             
-            # --- SELECCIÓN DE MÉTODO DE PAGO CON BOTONES DIRECOS ---
+            # --- SELECCIÓN DE MÉTODO DE PAGO CON BOTONES DIRECTOS ---
             st.write("### Seleccionar Método de Pago:")
             col_b1, col_b2, col_b3 = st.columns(3)
             
-            # Botones para abrir la confirmación del método seleccionado
             if col_b1.button("💵\nEfectivo", use_container_width=True):
                 st.session_state.metodo_seleccionado = "Efectivo"
                 
@@ -194,25 +201,41 @@ if choice == "🛒 Ventas":
 
 elif choice == "📦 Inventario":
     st.header("📦 Gestión de Inventario")
-    df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock FROM productos ORDER BY nombre ASC", conn)
+    df_inv = pd.read_sql_query("SELECT id, nombre, precio, stock, activo FROM productos ORDER BY nombre ASC", conn)
+    df_inv['activo'] = df_inv['activo'].astype(bool)
     df_inv['Eliminar'] = False
+    
     _, mid, _ = st.columns([1, 6, 1])
     with mid:
-        df_ed = st.data_editor(df_inv, column_config={"id": None, "Eliminar": st.column_config.CheckboxColumn("¿Borrar?", default=False)}, hide_index=True, use_container_width=True)
+        df_ed = st.data_editor(
+            df_inv, 
+            column_config={
+                "id": None, 
+                "activo": st.column_config.CheckboxColumn("¿Visible en Ventas?", default=True),
+                "Eliminar": st.column_config.CheckboxColumn("¿Borrar?", default=False)
+            }, 
+            hide_index=True, 
+            use_container_width=True
+        )
         c_inv1, c_inv2 = st.columns(2)
         if c_inv1.button("💾 Guardar Cambios", use_container_width=True):
-            for _, r in df_ed.iterrows(): c.execute("UPDATE productos SET nombre=?, precio=?, stock=? WHERE id=?", (r['nombre'], r['precio'], r['stock'], int(r['id'])))
+            for _, r in df_ed.iterrows(): 
+                c.execute("UPDATE productos SET nombre=?, precio=?, stock=?, activo=? WHERE id=?", 
+                          (r['nombre'], r['precio'], r['stock'], 1 if r['activo'] else 0, int(r['id'])))
             conn.commit(); st.success("Inventario Actualizado"); st.rerun()
+            
         if c_inv2.button("🗑️ Eliminar Seleccionados", use_container_width=True):
             for _, r in df_ed[df_ed['Eliminar']].iterrows(): c.execute("DELETE FROM productos WHERE id = ?", (int(r['id']),))
             conn.commit(); st.rerun()
+            
         with st.expander("➕ AGREGAR NUEVO PRODUCTO"):
             with st.form("n_p", clear_on_submit=True):
                 n = st.text_input("Nombre")
                 p = st.number_input("Precio", min_value=0)
                 s = st.number_input("Stock Inicial", min_value=0)
+                act = st.checkbox("Mostrar en pantalla de ventas", value=True)
                 if st.form_submit_button("Añadir"):
-                    c.execute("INSERT INTO productos (nombre, precio, stock) VALUES (?,?,?)", (n,p,s))
+                    c.execute("INSERT INTO productos (nombre, precio, stock, activo) VALUES (?,?,?,?)", (n, p, s, 1 if act else 0))
                     conn.commit(); st.rerun()
 
 elif choice == "📊 Productos Vendidos":
