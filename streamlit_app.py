@@ -38,6 +38,21 @@ st.markdown("""
     [data-testid="stSidebar"] { background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true"); background-size: cover; }
     h1, h2, h3, p, span, label, .stMarkdown { color: white !important; text-align: center; }
     
+    /* MEJORA DE MENÚ LATERAL PARA PANTALLAS TÁCTILES */
+    [data-testid="stSidebar"] div[role="radiogroup"] label {
+        padding: 12px 16px !important;
+        margin-bottom: 8px !important;
+        background-color: rgba(0, 0, 0, 0.4) !important;
+        border-radius: 10px !important;
+        border: 1px solid rgba(255, 107, 29, 0.4) !important;
+    }
+    
+    [data-testid="stSidebar"] div[role="radiogroup"] label p {
+        font-size: 22px !important;
+        font-weight: bold !important;
+        text-align: left !important;
+    }
+
     div.stButton > button {
         -webkit-appearance: none !important;
         appearance: none !important;
@@ -124,7 +139,6 @@ if choice == "🛒 Ventas":
         for i, row in prods.iterrows():
             with grid[i % 3]:
                 label_stock = f"({int(row['stock'])})" if row['stock'] > 0 else "(AGOTADO)"
-                # Formato del texto: Nombre en mayúsculas y resaltado
                 nombre_producto = row['nombre'].upper()
                 texto_final = f"**{nombre_producto}** {label_stock}\n₡{int(row['precio'])}"
                 
