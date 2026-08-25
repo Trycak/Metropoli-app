@@ -27,7 +27,7 @@ c.execute('CREATE TABLE IF NOT EXISTS históricos_reportes (id INTEGER PRIMARY K
 try:
     c.execute('ALTER TABLE productos ADD COLUMN activo INTEGER DEFAULT 1')
 except:
-    pass # La columna ya existe
+    pass
 
 conn.commit()
 
@@ -45,8 +45,8 @@ st.markdown("""
         color: #000000 !important;           
         border: 2px solid #d15615 !important; 
         border-radius: 12px !important;
-        font-weight: bold !important;
-        font-size: 18px !important;
+        font-size: 17px !important;
+        font-weight: 900 !important;
         height: 115px !important; 
         width: 100% !important; 
         margin-bottom: 10px !important;
@@ -119,13 +119,15 @@ if choice == "🛒 Ventas":
     col_prods, col_cart = st.columns([2, 1])
     with col_prods:
         st.subheader("🛒 Productos Disponibles")
-        # Solo consultamos los productos con activo = 1
         prods = pd.read_sql_query("SELECT * FROM productos WHERE activo = 1 ORDER BY nombre ASC", conn)
         grid = st.columns(3)
         for i, row in prods.iterrows():
             with grid[i % 3]:
                 label_stock = f"({int(row['stock'])})" if row['stock'] > 0 else "(AGOTADO)"
-                texto_final = f"{row['nombre']} {label_stock}\n₡{int(row['precio'])}"
+                # Formato del texto: Nombre en mayúsculas y resaltado
+                nombre_producto = row['nombre'].upper()
+                texto_final = f"**{nombre_producto}** {label_stock}\n₡{int(row['precio'])}"
+                
                 if st.button(texto_final, key=f"p_{row['id']}", disabled=row['stock'] <= 0):
                     pid = str(row['id'])
                     if pid in st.session_state.carrito: st.session_state.carrito[pid]['cantidad'] += 1
