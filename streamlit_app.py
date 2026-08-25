@@ -108,6 +108,7 @@ choice = st.sidebar.radio("Nav", menu, label_visibility="collapsed")
 
 if choice == "🛒 Ventas":
     if 'carrito' not in st.session_state: st.session_state.carrito = {}
+    
     col_prods, col_cart = st.columns([2, 1])
     with col_prods:
         st.subheader("🛒 Productos Disponibles")
@@ -134,27 +135,61 @@ if choice == "🛒 Ventas":
             st.markdown(f"""<div class="total-carrito"><p style="margin:0; font-size:16px; color:#ff6b1d;">MONTO A PAGAR</p><h1 style="margin:0; font-size:45px; color:white;">₡{int(total_v)}</h1></div>""", unsafe_allow_html=True)
             st.divider()
             
-            # --- MEJORA PARA EVITAR TECLADO AUTOMÁTICO EN TABLETS ---
-            metodo = st.selectbox("Forma de Pago", ["Efectivo", "SINPE Móvil", "Crédito"])
-            cliente_n = ""
-            if metodo == "Crédito":
-                clientes_db = pd.read_sql_query("SELECT DISTINCT cliente FROM ventas WHERE metodo = 'Crédito' AND reporte_id = -1 AND cliente != ''", conn)['cliente'].tolist()
-                opc = st.selectbox("Seleccionar Cliente", ["-- Seleccionar --", "+ Nuevo Cliente"] + clientes_db)
-                if opc == "+ Nuevo Cliente":
-                    cliente_n = st.text_input("Nombre del Cliente", key="input_nuevo_cliente")
-                elif opc != "-- Seleccionar --":
-                    cliente_n = opc
+            # --- SELECCIÓN DE MÉTODO DE PAGO CON BOTONES DIRECOS ---
+            st.write("### Seleccionar Método de Pago:")
+            col_b1, col_b2, col_b3 = st.columns(3)
             
-            if st.button("✅ FINALIZAR VENTA", use_container_width=True):
-                if metodo == "Crédito" and not cliente_n: 
-                    st.error("Por favor selecciona o ingresa un nombre de cliente.")
-                else:
-                    det = ", ".join([f"{v['nombre']}({v['cantidad']})" for v in st.session_state.carrito.values()])
-                    rep_id_inicial = -1 if metodo == "Crédito" else None
-                    c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente, reporte_id) VALUES (?,?,?,?,?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), total_v, metodo, det, cliente_n, rep_id_inicial))
-                    for pid, item in st.session_state.carrito.items():
-                        c.execute("UPDATE productos SET stock = stock - ? WHERE id = ?", (item['cantidad'], int(pid)))
-                    conn.commit(); st.session_state.carrito = {}; st.success("¡Venta Lista!"); st.rerun()
+            # Botones para abrir la confirmación del método seleccionado
+            if col_b1.button("💵\nEfectivo", use_container_width=True):
+                st.session_state.metodo_seleccionado = "Efectivo"
+                
+            if col_b2.button("📱\nSINPE", use_container_width=True):
+                st.session_state.metodo_seleccionado = "SINPE Móvil"
+                
+            if col_b3.button("📝\nCrédito", use_container_width=True):
+                st.session_state.metodo_seleccionado = "Crédito"
+
+            # --- POPUP / DIÁLOGO DE CONFIRMACIÓN ---
+            if 'metodo_seleccionado' in st.session_state and st.session_state.metodo_seleccionado:
+                metodo = st.session_state.metodo_seleccionado
+                
+                @st.dialog(f"Confirmar Venta - {metodo}")
+                def confirmar_venta_dialog():
+                    st.write(f"**Monto Total:** ₡{int(total_v)}")
+                    
+                    cliente_n = ""
+                    if metodo == "Crédito":
+                        clientes_db = pd.read_sql_query("SELECT DISTINCT cliente FROM ventas WHERE metodo = 'Crédito' AND reporte_id = -1 AND cliente != ''", conn)['cliente'].tolist()
+                        opc = st.selectbox("Seleccionar Cliente", ["-- Seleccionar --", "+ Nuevo Cliente"] + clientes_db)
+                        if opc == "+ Nuevo Cliente":
+                            cliente_n = st.text_input("Nombre del Cliente")
+                        elif opc != "-- Seleccionar --":
+                            cliente_n = opc
+
+                    st.write("---")
+                    c_conf1, c_conf2 = st.columns(2)
+                    
+                    if c_conf1.button("❌ Cancelar", use_container_width=True):
+                        st.session_state.metodo_seleccionado = None
+                        st.rerun()
+                        
+                    if c_conf2.button("✅ Registrar Venta", use_container_width=True):
+                        if metodo == "Crédito" and not cliente_n:
+                            st.error("Por favor ingresa o selecciona el nombre del cliente.")
+                        else:
+                            det = ", ".join([f"{v['nombre']}({v['cantidad']})" for v in st.session_state.carrito.values()])
+                            rep_id_inicial = -1 if metodo == "Crédito" else None
+                            c.execute("INSERT INTO ventas (fecha, total, metodo, detalle, cliente, reporte_id) VALUES (?,?,?,?,?,?)",
+                                      (datetime.now().strftime("%Y-%m-%d %H:%M"), total_v, metodo, det, cliente_n, rep_id_inicial))
+                            for pid, item in st.session_state.carrito.items():
+                                c.execute("UPDATE productos SET stock = stock - ? WHERE id = ?", (item['cantidad'], int(pid)))
+                            conn.commit()
+                            st.session_state.carrito = {}
+                            st.session_state.metodo_seleccionado = None
+                            st.success("¡Venta Registrada!")
+                            st.rerun()
+
+                confirmar_venta_dialog()
         else: st.info("El carrito está vacío")
 
 elif choice == "📦 Inventario":
