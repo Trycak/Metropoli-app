@@ -9,7 +9,6 @@ st.set_page_config(page_title="Metropoli Cafe", page_icon="🏀", layout="wide")
 
 # 2. Conexión a Base de Datos
 def conectar_db():
-    # En Railway, si añades un Volume en /app/data la BD se mantendrá guardada permanentemente.
     if os.path.exists('/app/data'):
         ruta = '/app/data/metropoli.db'
     else:
@@ -134,14 +133,21 @@ if choice == "🛒 Ventas":
                 if c2.button("X", key=f"del_{pid}"): del st.session_state.carrito[pid]; st.rerun()
             st.markdown(f"""<div class="total-carrito"><p style="margin:0; font-size:16px; color:#ff6b1d;">MONTO A PAGAR</p><h1 style="margin:0; font-size:45px; color:white;">₡{int(total_v)}</h1></div>""", unsafe_allow_html=True)
             st.divider()
+            
+            # --- MEJORA PARA EVITAR TECLADO AUTOMÁTICO EN TABLETS ---
             metodo = st.selectbox("Forma de Pago", ["Efectivo", "SINPE Móvil", "Crédito"])
             cliente_n = ""
             if metodo == "Crédito":
                 clientes_db = pd.read_sql_query("SELECT DISTINCT cliente FROM ventas WHERE metodo = 'Crédito' AND reporte_id = -1 AND cliente != ''", conn)['cliente'].tolist()
-                opc = st.selectbox("Seleccionar Cliente", ["-- Nuevo --"] + clientes_db)
-                cliente_n = st.text_input("Nombre del Cliente") if opc == "-- Nuevo --" else opc
+                opc = st.selectbox("Seleccionar Cliente", ["-- Seleccionar --", "+ Nuevo Cliente"] + clientes_db)
+                if opc == "+ Nuevo Cliente":
+                    cliente_n = st.text_input("Nombre del Cliente", key="input_nuevo_cliente")
+                elif opc != "-- Seleccionar --":
+                    cliente_n = opc
+            
             if st.button("✅ FINALIZAR VENTA", use_container_width=True):
-                if metodo == "Crédito" and not cliente_n: st.error("Falta nombre")
+                if metodo == "Crédito" and not cliente_n: 
+                    st.error("Por favor selecciona o ingresa un nombre de cliente.")
                 else:
                     det = ", ".join([f"{v['nombre']}({v['cantidad']})" for v in st.session_state.carrito.values()])
                     rep_id_inicial = -1 if metodo == "Crédito" else None
