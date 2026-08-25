@@ -38,13 +38,12 @@ st.markdown("""
     [data-testid="stSidebar"] { background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true"); background-size: cover; }
     h1, h2, h3, p, span, label, .stMarkdown { color: white !important; text-align: center; }
     
-    /* MENÚ LATERAL - TAMAÑO INTERMEDIO */
+    /* MENÚ LATERAL - TRANSPARENTE CON TAMAÑO INTERMEDIO */
     [data-testid="stSidebar"] div[role="radiogroup"] label {
         padding: 8px 12px !important;
         margin-bottom: 6px !important;
-        background-color: rgba(0, 0, 0, 0.3) !important;
-        border-radius: 8px !important;
-        border: 1px solid rgba(255, 107, 29, 0.3) !important;
+        background-color: transparent !important;
+        border: none !important;
     }
     
     [data-testid="stSidebar"] div[role="radiogroup"] label p {
