@@ -38,18 +38,18 @@ st.markdown("""
     [data-testid="stSidebar"] { background-image: url("https://github.com/Trycak/Metropoli-app/blob/main/Back%20large.png?raw=true"); background-size: cover; }
     h1, h2, h3, p, span, label, .stMarkdown { color: white !important; text-align: center; }
     
-    /* MEJORA DE MENÚ LATERAL PARA PANTALLAS TÁCTILES */
+    /* MENÚ LATERAL - TAMAÑO INTERMEDIO */
     [data-testid="stSidebar"] div[role="radiogroup"] label {
-        padding: 12px 16px !important;
-        margin-bottom: 8px !important;
-        background-color: rgba(0, 0, 0, 0.4) !important;
-        border-radius: 10px !important;
-        border: 1px solid rgba(255, 107, 29, 0.4) !important;
+        padding: 8px 12px !important;
+        margin-bottom: 6px !important;
+        background-color: rgba(0, 0, 0, 0.3) !important;
+        border-radius: 8px !important;
+        border: 1px solid rgba(255, 107, 29, 0.3) !important;
     }
     
     [data-testid="stSidebar"] div[role="radiogroup"] label p {
-        font-size: 22px !important;
-        font-weight: bold !important;
+        font-size: 18px !important;
+        font-weight: 600 !important;
         text-align: left !important;
     }
 
