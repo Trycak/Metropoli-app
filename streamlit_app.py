@@ -347,8 +347,40 @@ elif choice == "📋 Reportes":
         df_p = pd.read_sql_query("SELECT id, fecha, total, metodo, detalle, cliente FROM ventas WHERE reporte_id IS NULL", conn)
         if not df_p.empty:
             st.dataframe(df_p, hide_index=True, use_container_width=True)
-            t_caja = df_p[df_p['metodo'].isin(['Efectivo', 'SINPE Móvil'])]['total'].sum()
-            st.subheader(f"Dinero en Caja Real: ₡{int(t_caja)}")
+            
+            # --- DESGLOSE DE VENTAS POR TIPO DE PAGO ---
+            st.subheader("💵 Desglose por Método de Pago")
+            
+            # Cálculo de los montos filtrados según el método de pago
+            total_efectivo = df_p[df_p['metodo'] == 'Efectivo']['total'].sum()
+            total_sinpe = df_p[df_p['metodo'] == 'SINPE Móvil']['total'].sum()
+            t_caja = total_efectivo + total_sinpe
+            
+            col_efec, col_sinp, col_tot = st.columns(3)
+            with col_efec:
+                st.markdown(f"""
+                <div class="info-caja">
+                    <p style="margin:0; font-size:16px;">💵 Efectivo</p>
+                    <h2 style="margin:0; font-size:30px;">₡{int(total_efectivo)}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+            
+            with col_sinp:
+                st.markdown(f"""
+                <div class="info-caja">
+                    <p style="margin:0; font-size:16px;">📱 SINPE Móvil</p>
+                    <h2 style="margin:0; font-size:30px;">₡{int(total_sinpe)}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+                
+            with col_tot:
+                st.markdown(f"""
+                <div class="info-caja" style="border: 2px solid #ff6b1d;">
+                    <p style="margin:0; font-size:16px; color:#ff6b1d;">💰 Total Real en Caja</p>
+                    <h2 style="margin:0; font-size:30px; color:#ff6b1d;">₡{int(t_caja)}</h2>
+                </div>
+                """, unsafe_allow_html=True)
+            
             if st.button("🔴 CERRAR CAJA Y ARCHIVAR", use_container_width=True):
                 c.execute("INSERT INTO históricos_reportes (fecha_cierre, total_caja) VALUES (?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), t_caja))
                 c.execute("UPDATE ventas SET reporte_id = (SELECT max(id) FROM históricos_reportes) WHERE reporte_id IS NULL")
