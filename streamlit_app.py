@@ -255,11 +255,12 @@ elif choice == "📦 Inventario":
 
 elif choice == "📊 Productos Vendidos":
     st.header("📊 Ranking de Productos Vendidos")
-    df_v = pd.read_sql_query("SELECT detalle FROM ventas WHERE reporte_id IS NULL", conn)
+    # Incluye tanto ventas pagadas en el turno actual (reporte_id IS NULL) como créditos pendientes (reporte_id = -1)
+    df_v = pd.read_sql_query("SELECT detalle FROM ventas WHERE reporte_id IS NULL OR reporte_id = -1", conn)
     if not df_v.empty:
         df_res = obtener_conteo_productos(df_v)
         st.dataframe(df_res, hide_index=True, use_container_width=True)
-    else: st.info("No hay ventas en este turno.")
+    else: st.info("No hay ventas ni créditos pendientes en este turno.")
 
 elif choice == "📝 Cuentas por Cobrar":
     st.header("📝 Gestión de Créditos")
