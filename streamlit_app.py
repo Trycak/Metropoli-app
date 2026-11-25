@@ -387,21 +387,21 @@ elif choice == "📋 Reportes":
                 conn.commit(); st.success("Caja Cerrada y Guardada en el Historial"); st.rerun()
         else: st.info("No hay ventas en el turno actual.")
 
-   with tab_historico:
-        st.header("Consulta de Cierres Pasados")
-        historicos = pd.read_sql_query("SELECT * FROM históricos_reportes ORDER BY id DESC", conn)
-        if not historicos.empty:
-            opciones_cierre = {
-                f"{r['nombre'] if 'nombre' in r and r['nombre'] else 'Cierre #' + str(r['id'])} | {r['fecha_cierre']} | Total: ₡{int(r['total_caja'])}": r['id']
-                for _, r in historicos.iterrows()
-            }
-            seleccion = st.selectbox("Seleccione un cierre para ver detalle:", list(opciones_cierre.keys()))
-            id_cierre = opciones_cierre[seleccion]
-            df_hist = pd.read_sql_query("SELECT fecha, total, metodo, detalle, cliente FROM ventas WHERE reporte_id = ?", conn, params=(id_cierre,))
-            st.markdown(f"<div class='info-caja'><h3>Reporte #{id_cierre}</h3></div>", unsafe_allow_html=True)
-            st.dataframe(df_hist, hide_index=True, use_container_width=True)
-            st.subheader("Ranking de Productos en este Cierre")
-            df_prod_hist = obtener_conteo_productos(df_hist)
-            st.dataframe(df_prod_hist, hide_index=True, use_container_width=True)
-        else:
-            st.info("Aún no hay reportes cerrados en el historial.")
+with tab_historico:   
+            st.header("Consulta de Cierres Pasados")
+            historicos = pd.read_sql_query("SELECT * FROM históricos_reportes ORDER BY id DESC", conn)
+            if not historicos.empty:
+                opciones_cierre = {
+                    f"{r['nombre'] if 'nombre' in r and r['nombre'] else 'Cierre #' + str(r['id'])} | {r['fecha_cierre']} | Total: ₡{int(r['total_caja'])}": r['id']
+                    for _, r in historicos.iterrows()
+                }
+                seleccion = st.selectbox("Seleccione un cierre para ver detalle:", list(opciones_cierre.keys()))
+                id_cierre = opciones_cierre[seleccion]
+                df_hist = pd.read_sql_query("SELECT fecha, total, metodo, detalle, cliente FROM ventas WHERE reporte_id = ?", conn, params=(id_cierre,))
+                st.markdown(f"<div class='info-caja'><h3>Reporte #{id_cierre}</h3></div>", unsafe_allow_html=True)
+                st.dataframe(df_hist, hide_index=True, use_container_width=True)
+                st.subheader("Ranking de Productos en este Cierre")
+                df_prod_hist = obtener_conteo_productos(df_hist)
+                st.dataframe(df_prod_hist, hide_index=True, use_container_width=True)
+            else:
+                st.info("Aún no hay reportes cerrados en el historial.")
