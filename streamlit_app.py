@@ -21,11 +21,17 @@ c = conn.cursor()
 # Asegurar tablas
 c.execute('CREATE TABLE IF NOT EXISTS productos (id INTEGER PRIMARY KEY, nombre TEXT, precio REAL, stock INTEGER, activo INTEGER DEFAULT 1)')
 c.execute('CREATE TABLE IF NOT EXISTS ventas (id INTEGER PRIMARY KEY, fecha TEXT, total REAL, metodo TEXT, detalle TEXT, cliente TEXT, reporte_id INTEGER)')
-c.execute('CREATE TABLE IF NOT EXISTS históricos_reportes (id INTEGER PRIMARY KEY AUTOINCREMENT, fecha_cierre TEXT, total_caja REAL)')
+c.execute('CREATE TABLE IF NOT EXISTS históricos_reportes (id INTEGER PRIMARY KEY AUTOINCREMENT, nombre TEXT, fecha_cierre TEXT, total_caja REAL)')
 
-# Migración automática por si la columna 'activo' no existía previamente
+# Migraciones automáticas
 try:
     c.execute('ALTER TABLE productos ADD COLUMN activo INTEGER DEFAULT 1')
+except:
+    pass
+
+try:
+    c.execute('ALTER TABLE históricos_reportes ADD COLUMN nombre TEXT')
+    c.execute("UPDATE históricos_reportes SET nombre = 'Cierre #' || id || ' (' || fecha_cierre || ')' WHERE nombre IS NULL OR nombre = ''")
 except:
     pass
 
@@ -255,12 +261,11 @@ elif choice == "📦 Inventario":
 
 elif choice == "📊 Productos Vendidos":
     st.header("📊 Ranking de Productos Vendidos")
-    # Incluye tanto ventas pagadas en el turno actual (reporte_id IS NULL) como créditos pendientes (reporte_id = -1)
-    df_v = pd.read_sql_query("SELECT detalle FROM ventas WHERE reporte_id IS NULL OR reporte_id = -1", conn)
+    df_v = pd.read_sql_query("SELECT detalle FROM ventas WHERE reporte_id IS NULL", conn)
     if not df_v.empty:
         df_res = obtener_conteo_productos(df_v)
         st.dataframe(df_res, hide_index=True, use_container_width=True)
-    else: st.info("No hay ventas ni créditos pendientes en este turno.")
+    else: st.info("No hay ventas en este turno.")
 
 elif choice == "📝 Cuentas por Cobrar":
     st.header("📝 Gestión de Créditos")
@@ -352,7 +357,6 @@ elif choice == "📋 Reportes":
             # --- DESGLOSE DE VENTAS POR TIPO DE PAGO ---
             st.subheader("💵 Desglose por Método de Pago")
             
-            # Cálculo de los montos filtrados según el método de pago
             total_efectivo = df_p[df_p['metodo'] == 'Efectivo']['total'].sum()
             total_sinpe = df_p[df_p['metodo'] == 'SINPE Móvil']['total'].sum()
             t_caja = total_efectivo + total_sinpe
@@ -383,20 +387,66 @@ elif choice == "📋 Reportes":
                 """, unsafe_allow_html=True)
             
             if st.button("🔴 CERRAR CAJA Y ARCHIVAR", use_container_width=True):
-                c.execute("INSERT INTO históricos_reportes (fecha_cierre, total_caja) VALUES (?,?)", (datetime.now().strftime("%Y-%m-%d %H:%M"), t_caja))
-                c.execute("UPDATE ventas SET reporte_id = (SELECT max(id) FROM históricos_reportes) WHERE reporte_id IS NULL")
-                conn.commit(); st.success("Caja Cerrada y Guardada en el Historial"); st.rerun()
-        else: st.info("No hay ventas en el turno actual.")
+                st.session_state.solicitar_nombre_cierre = True
+
+            if st.session_state.get("solicitar_nombre_cierre", False):
+                fecha_actual = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+                @st.dialog("Cerrar Caja y Guardar Reporte")
+                def cerrar_caja_dialog():
+                    st.write(f"**Fecha de cierre:** {fecha_actual}")
+                    st.write(f"**Total en caja:** ₡{int(t_caja)}")
+                    nombre_reporte = st.text_input(
+                        "Nombre para este reporte",
+                        value=f"Cierre {fecha_actual}",
+                        placeholder="Ej. Torneo U14 - Tarde"
+                    )
+
+                    c_rep1, c_rep2 = st.columns(2)
+                    if c_rep1.button("❌ Cancelar", key="btn_cancelar_cierre", use_container_width=True):
+                        st.session_state.solicitar_nombre_cierre = False
+                        st.rerun()
+
+                    if c_rep2.button("✅ Guardar Cierre", key="btn_guardar_cierre", use_container_width=True):
+                        nombre_limpio = nombre_reporte.strip() if nombre_reporte and nombre_reporte.strip() else f"Cierre {fecha_actual}"
+                        c.execute(
+                            "INSERT INTO históricos_reportes (nombre, fecha_cierre, total_caja) VALUES (?,?,?)",
+                            (nombre_limpio, fecha_actual, t_caja)
+                        )
+                        c.execute("UPDATE ventas SET reporte_id = (SELECT max(id) FROM históricos_reportes) WHERE reporte_id IS NULL")
+                        conn.commit()
+                        st.session_state.solicitar_nombre_cierre = False
+                        st.session_state.cierre_guardado_msg = f"Caja cerrada y guardada como '{nombre_limpio}' ({fecha_actual})"
+                        st.rerun()
+
+                cerrar_caja_dialog()
+
+            if st.session_state.get("cierre_guardado_msg"):
+                st.success(st.session_state.cierre_guardado_msg)
+                st.session_state.cierre_guardado_msg = None
+        else:
+            if st.session_state.get("cierre_guardado_msg"):
+                st.success(st.session_state.cierre_guardado_msg)
+                st.session_state.cierre_guardado_msg = None
+            st.info("No hay ventas en el turno actual.")
 
     with tab_historico:
         st.header("Consulta de Cierres Pasados")
         historicos = pd.read_sql_query("SELECT * FROM históricos_reportes ORDER BY id DESC", conn)
         if not historicos.empty:
-            opciones_cierre = {f"ID: {r['id']} | Fecha: {r['fecha_cierre']} | Total: ₡{int(r['total_caja'])}": r['id'] for _, r in historicos.iterrows()}
+            opciones_cierre = {
+                f"{r['nombre'] if r['nombre'] else f'Cierre #{r[\"id\"]}'} | {r['fecha_cierre']} | Total: ₡{int(r['total_caja'])}": r['id']
+                for _, r in historicos.iterrows()
+            }
             seleccion = st.selectbox("Seleccione un cierre para ver detalle:", list(opciones_cierre.keys()))
             id_cierre = opciones_cierre[seleccion]
+            info_cierre = historicos[historicos['id'] == id_cierre].iloc[0]
+            nombre_mostrar = info_cierre['nombre'] if info_cierre['nombre'] else f"Cierre #{id_cierre}"
             df_hist = pd.read_sql_query("SELECT fecha, total, metodo, detalle, cliente FROM ventas WHERE reporte_id = ?", conn, params=(id_cierre,))
-            st.markdown(f"<div class='info-caja'><h3>Reporte #{id_cierre}</h3></div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div class='info-caja'><h3>{nombre_mostrar}</h3><p style='margin:0;'>Fecha de cierre: {info_cierre['fecha_cierre']} | Total: ₡{int(info_cierre['total_caja'])}</p></div>",
+                unsafe_allow_html=True
+            )
             st.dataframe(df_hist, hide_index=True, use_container_width=True)
             st.subheader("Ranking de Productos en este Cierre")
             df_prod_hist = obtener_conteo_productos(df_hist)
